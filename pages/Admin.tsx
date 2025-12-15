@@ -33,6 +33,10 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const [isJinaSearching, setIsJinaSearching] = useState(false);
   const [jinaSearchResults, setJinaSearchResults] = useState<JinaSearchResult[]>([]);
   const [jinaSearchError, setJinaSearchError] = useState('');
+  const [jinaSearchNum, setJinaSearchNum] = useState(10);
+  const [jinaSearchPage, setJinaSearchPage] = useState(1);
+  const [expandedResultIdx, setExpandedResultIdx] = useState<number | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   
   const [previewArticle, setPreviewArticle] = useState<Article | null>(null);
   const [showStartModal, setShowStartModal] = useState(false);
@@ -75,19 +79,39 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       setAvailableCategories(cats);
   };
   
-  const handleJinaSearch = async () => {
+  const handleJinaSearch = async (loadMore = false) => {
       if (!jinaSearchQuery.trim()) return;
-      setIsJinaSearching(true);
+      
+      if (loadMore) {
+          setIsLoadingMore(true);
+      } else {
+          setIsJinaSearching(true);
+          setJinaSearchResults([]);
+          setJinaSearchPage(1);
+          setExpandedResultIdx(null);
+      }
       setJinaSearchError('');
-      setJinaSearchResults([]);
+      
+      const currentPage = loadMore ? jinaSearchPage + 1 : 1;
       
       try {
-          const results = await searchJina(jinaSearchQuery.trim(), jinaApiKey || undefined);
-          setJinaSearchResults(results);
+          const results = await searchJina(
+              jinaSearchQuery.trim(), 
+              jinaApiKey || undefined,
+              { num: jinaSearchNum, page: currentPage }
+          );
+          
+          if (loadMore) {
+              setJinaSearchResults(prev => [...prev, ...results]);
+              setJinaSearchPage(currentPage);
+          } else {
+              setJinaSearchResults(results);
+          }
       } catch (e: any) {
           setJinaSearchError(e.message || 'Search failed');
       } finally {
           setIsJinaSearching(false);
+          setIsLoadingMore(false);
       }
   };
 
@@ -250,7 +274,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                               onKeyDown={e => e.key === 'Enter' && handleJinaSearch()}
                           />
                           <button 
-                              onClick={handleJinaSearch} 
+                              onClick={() => handleJinaSearch(false)} 
                               disabled={isJinaSearching || !jinaSearchQuery.trim()} 
                               className="px-6 bg-blue-600 text-white font-bold rounded-lg shadow-sm disabled:opacity-50"
                           >
@@ -260,21 +284,59 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                       {jinaSearchError && <div className="bg-red-50 text-red-700 p-3 rounded text-sm">{jinaSearchError}</div>}
                       
                       {jinaSearchResults.length > 0 && (
-                          <div className="space-y-3 max-h-64 overflow-y-auto">
-                              {jinaSearchResults.map((result, idx) => (
-                                  <div key={idx} className="p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-blue-300 transition-colors">
-                                      <div className="font-medium text-slate-800 mb-1">{result.title}</div>
-                                      <div className="text-xs text-slate-500 mb-2 truncate">{result.url}</div>
-                                      <div className="text-sm text-slate-600 line-clamp-2 mb-3">{result.description}</div>
-                                      <button 
-                                          onClick={() => handleImportFromSearch(result.url)}
-                                          disabled={isJinaLoading}
-                                          className="text-sm px-3 py-1 bg-pink-600 text-white rounded hover:bg-pink-700 disabled:opacity-50"
-                                      >
-                                          {isJinaLoading ? '导入中...' : '导入此文章'}
-                                      </button>
-                                  </div>
-                              ))}
+                          <div className="space-y-3">
+                              <div className="text-sm text-slate-500 mb-2">找到 {jinaSearchResults.length} 条结果</div>
+                              <div className="space-y-3 max-h-96 overflow-y-auto">
+                                  {jinaSearchResults.map((result, idx) => (
+                                      <div key={idx} className="p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-blue-300 transition-colors">
+                                          <div 
+                                              className="cursor-pointer"
+                                              onClick={() => setExpandedResultIdx(expandedResultIdx === idx ? null : idx)}
+                                          >
+                                              <div className="flex items-start justify-between">
+                                                  <div className="font-medium text-slate-800 mb-1 flex-1">{result.title}</div>
+                                                  <span className="text-slate-400 text-xs ml-2">{expandedResultIdx === idx ? '收起' : '展开'}</span>
+                                              </div>
+                                              <div className="text-xs text-blue-600 mb-2 truncate hover:underline">{result.url}</div>
+                                              <div className="text-sm text-slate-600 line-clamp-2">{result.description}</div>
+                                          </div>
+                                          
+                                          {expandedResultIdx === idx && result.content && (
+                                              <div className="mt-3 pt-3 border-t border-slate-200">
+                                                  <div className="text-sm text-slate-700 whitespace-pre-wrap max-h-48 overflow-y-auto bg-white p-3 rounded border">
+                                                      {result.content}
+                                                  </div>
+                                              </div>
+                                          )}
+                                          
+                                          <div className="flex gap-2 mt-3">
+                                              <button 
+                                                  onClick={() => handleImportFromSearch(result.url)}
+                                                  disabled={isJinaLoading}
+                                                  className="text-sm px-3 py-1 bg-pink-600 text-white rounded hover:bg-pink-700 disabled:opacity-50"
+                                              >
+                                                  {isJinaLoading ? '导入中...' : '导入此文章'}
+                                              </button>
+                                              <a 
+                                                  href={result.url} 
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer"
+                                                  className="text-sm px-3 py-1 border border-slate-300 text-slate-600 rounded hover:bg-slate-100"
+                                              >
+                                                  打开原文
+                                              </a>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                              
+                              <button 
+                                  onClick={() => handleJinaSearch(true)}
+                                  disabled={isLoadingMore}
+                                  className="w-full py-2 text-sm text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 disabled:opacity-50"
+                              >
+                                  {isLoadingMore ? '加载中...' : '加载更多结果'}
+                              </button>
                           </div>
                       )}
                   </div>

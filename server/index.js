@@ -299,13 +299,17 @@ app.post('/api/jina/import', async (req, res) => {
 
 // Search API - search and get results
 app.post('/api/jina/search', async (req, res) => {
-    const { query, apiKey } = req.body;
+    const { query, apiKey, num, page } = req.body;
     if (!query) return res.status(400).json({ error: "Query required" });
 
     const token = apiKey || JINA_API_KEY;
     if (!token) return res.status(400).json({ error: "Jina API Key required" });
 
     try {
+        const searchBody = { q: query };
+        if (num) searchBody.num = num;
+        if (page) searchBody.page = page;
+        
         const jinaRes = await fetch('https://s.jina.ai/', {
             method: 'POST',
             headers: {
@@ -313,7 +317,7 @@ app.post('/api/jina/search', async (req, res) => {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ q: query })
+            body: JSON.stringify(searchBody)
         });
         
         if (!jinaRes.ok) {

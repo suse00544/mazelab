@@ -32,12 +32,21 @@ export const fetchJinaReader = async (url: string, apiKey?: string): Promise<Pro
     }
 };
 
-export const searchJina = async (query: string, apiKey?: string): Promise<JinaSearchResult[]> => {
+export const searchJina = async (
+    query: string, 
+    apiKey?: string, 
+    options?: { num?: number; page?: number }
+): Promise<JinaSearchResult[]> => {
     try {
         const res = await fetch('/api/jina/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, apiKey })
+            body: JSON.stringify({ 
+                query, 
+                apiKey,
+                num: options?.num,
+                page: options?.page
+            })
         });
         
         if (!res.ok) {
