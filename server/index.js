@@ -416,6 +416,92 @@ app.post('/api/mcp/proxy', async (req, res) => {
     }
 });
 
+// Image Proxy - 下载外部图片并返回，解决跨域和防盗链问题
+app.get('/api/image-proxy', async (req, res) => {
+    try {
+        const { url } = req.query;
+        if (!url) {
+            return res.status(400).json({ error: 'Missing url parameter' });
+        }
+
+        console.log('[Image Proxy] Fetching:', url);
+        
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': new URL(url).origin,
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            }
+        });
+
+        if (!response.ok) {
+            console.error('[Image Proxy] Failed:', response.status);
+            return res.status(response.status).json({ error: `Failed to fetch image: ${response.status}` });
+        }
+
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        const buffer = await response.buffer();
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache 1 day
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.send(buffer);
+        
+    } catch (e) {
+        console.error('[Image Proxy] Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Image Download - 下载外部图片并保存到服务器
+app.post('/api/image-download', async (req, res) => {
+    try {
+        const { url, filename } = req.body;
+        if (!url) {
+            return res.status(400).json({ error: 'Missing url' });
+        }
+
+        console.log('[Image Download] Downloading:', url);
+        
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': new URL(url).origin,
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            }
+        });
+
+        if (!response.ok) {
+            return res.status(response.status).json({ error: `Failed to download: ${response.status}` });
+        }
+
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        const buffer = await response.buffer();
+        
+        // 生成文件名
+        const ext = contentType.includes('png') ? 'png' : 
+                    contentType.includes('gif') ? 'gif' : 
+                    contentType.includes('webp') ? 'webp' : 'jpg';
+        const savedFilename = filename || `${uuidv4()}.${ext}`;
+        const filePath = path.join(uploadsDir, savedFilename);
+        
+        fs.writeFileSync(filePath, buffer);
+        
+        const savedUrl = `/uploads/${savedFilename}`;
+        console.log('[Image Download] Saved to:', savedUrl);
+        
+        res.json({ 
+            success: true, 
+            url: savedUrl,
+            filename: savedFilename
+        });
+        
+    } catch (e) {
+        console.error('[Image Download] Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });

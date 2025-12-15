@@ -119,6 +119,25 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
     return items;
   };
   
+  // 下载图片到服务器
+  const downloadImage = async (url: string): Promise<string | null> => {
+    if (!url) return null;
+    try {
+      const response = await fetch('/api/image-download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data.url; // 返回本地路径如 /uploads/xxx.jpg
+      }
+    } catch (e) {
+      console.error('Failed to download image:', e);
+    }
+    return null;
+  };
+
   // 保存 MCP 解析的内容为文章
   const handleSaveMcpItem = async (item: {title: string; desc: string; nickname: string; avatar: string; urlDefault: string}, index: number) => {
     if (!item.title.trim()) {
@@ -128,6 +147,13 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
     
     setIsSavingMcpItem(index);
     try {
+      // 下载图片到服务器
+      let savedImageUrl = '';
+      if (item.urlDefault) {
+        const downloaded = await downloadImage(item.urlDefault);
+        savedImageUrl = downloaded || item.urlDefault; // 如果下载失败，使用原始URL
+      }
+      
       // 将作者信息放到 content 开头
       const authorInfo = item.nickname ? `> 作者: ${item.nickname}\n\n` : '';
       const fullContent = authorInfo + item.desc;
@@ -144,7 +170,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
         created_at: Date.now(),
         isPublic: true,
         ownerId: user.id,
-        imageUrl: item.urlDefault || undefined
+        imageUrl: savedImageUrl || undefined
       };
       
       await db.saveArticle(newArticle);
@@ -786,7 +812,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                                               <div className="flex items-center gap-3 mb-3">
                                                   {item.avatar ? (
                                                       <img 
-                                                          src={item.avatar} 
+                                                          src={`/api/image-proxy?url=${encodeURIComponent(item.avatar)}`} 
                                                           alt={item.nickname || '用户'} 
                                                           className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
                                                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -807,11 +833,11 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                                                   <h4 className="text-lg font-bold text-slate-800 mb-2">{item.title}</h4>
                                               )}
                                               
-                                              {/* 内容图片 */}
+                                              {/* 内容图片 - 使用代理 */}
                                               {item.urlDefault && (
                                                   <div className="mb-3">
                                                       <img 
-                                                          src={item.urlDefault} 
+                                                          src={`/api/image-proxy?url=${encodeURIComponent(item.urlDefault)}`} 
                                                           alt="内容图片" 
                                                           className="w-full max-h-64 object-cover rounded-lg border border-slate-200"
                                                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
