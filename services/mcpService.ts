@@ -44,6 +44,8 @@ export class MCPClient {
     });
   }
 
+  private originalUrl: string = '';
+
   /**
    * Connect to the MCP Server
    * @param url The SSE endpoint URL
@@ -52,15 +54,61 @@ export class MCPClient {
   async connect(url: string, options: { 
       useNativeEventSource?: boolean;
       headers?: Record<string, string>;
+      useProxy?: boolean;
   } = {}): Promise<void> {
     
     this.disconnect();
     this.customHeaders = options.headers || {};
+    this.originalUrl = url;
     
-    if (options.useNativeEventSource) {
+    // Default to using proxy to avoid CORS issues
+    const useProxy = options.useProxy !== false;
+    
+    if (useProxy) {
+        return this.connectViaProxy(url);
+    } else if (options.useNativeEventSource) {
         return this.connectNative(url);
     } else {
         return this.connectFetch(url);
+    }
+  }
+
+  /**
+   * Method C: Connect via backend proxy (recommended - bypasses CORS)
+   */
+  private async connectViaProxy(url: string): Promise<void> {
+    this.abortController = new AbortController();
+    const proxyUrl = `/api/mcp/proxy?url=${encodeURIComponent(url)}`;
+    this.log('info', `Connecting via backend proxy: ${url}`);
+
+    try {
+      const response = await fetch(proxyUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+        signal: this.abortController.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`HTTP Error ${response.status}: ${errorText}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      this.log('info', 'Proxy stream connected. Reading...');
+      
+      return new Promise<void>((resolve, reject) => {
+          this.readStream(response.body!, url, resolve, reject);
+      });
+
+    } catch (e: any) {
+      this.log('error', `Connection failed: ${e.message}`);
+      throw e;
     }
   }
 
@@ -228,11 +276,13 @@ export class MCPClient {
     this.log('send', `Sending JSON-RPC: ${method}`, payload);
 
     try {
-      const response = await fetch(this.postEndpoint, {
+      // Use proxy for POST requests too
+      const proxyUrl = `/api/mcp/proxy?url=${encodeURIComponent(this.postEndpoint)}`;
+      
+      const response = await fetch(proxyUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...this.customHeaders // Also send headers on POST requests
         },
         body: JSON.stringify(payload)
       });
