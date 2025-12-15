@@ -257,18 +257,21 @@ export const runRecommendationPipeline = async (
     strategyTaskPrompt: string, 
     contentTaskPrompt: string, 
     onLog: LogCallback, 
-    onUpdate: UpdateCallback
+    onUpdate: UpdateCallback,
+    contextUserId?: string,
+    contextExpId?: string
 ) => {
   onLog('[Pipeline] Starting...');
   const logBuffer: string[] = [];
   const captureLog = (msg: string) => { logBuffer.push(msg); onLog(msg); };
 
-  const userId = interactions.length > 0 ? interactions[0].userId : null;
+  const userId = interactions.length > 0 ? interactions[0].userId : contextUserId;
   if (!userId) throw new Error("No user context.");
 
   // 1. Fetch Async Data for Context
+  const expId = interactions.length > 0 ? interactions[0].experimentId : contextExpId;
+  if (!expId) throw new Error("No experiment context.");
   captureLog('[Data] Fetching sessions & articles for history context...');
-  const expId = interactions[0].experimentId;
   const [sessions, allArticles] = await Promise.all([
       db.getExperimentSessions(expId),
       db.getAllArticles()

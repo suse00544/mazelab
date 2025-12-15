@@ -140,7 +140,9 @@ export const Feed: React.FC<Props> = ({
         strategyPrompt,
         contentPrompt,
         onProcessLog,
-        onProcessUpdate
+        onProcessUpdate,
+        currentUser.id,
+        expId
       );
       
       onProcessUpdate(result.debug);
