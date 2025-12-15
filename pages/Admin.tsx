@@ -3,7 +3,7 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { db } from '../services/db';
 import { Article, User } from '../types';
 import { MCPClient, MCPTool, MCPLog } from '../services/mcpService';
-import { fetchJinaReader } from '../services/jinaService';
+import { fetchJinaReader, searchJina, JinaSearchResult } from '../services/jinaService';
 
 interface Props {
     user: User;
@@ -28,6 +28,11 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const [jinaApiKey, setJinaApiKey] = useState(() => localStorage.getItem('JINA_API_KEY') || '');
   const [isJinaLoading, setIsJinaLoading] = useState(false);
   const [jinaError, setJinaError] = useState('');
+  
+  const [jinaSearchQuery, setJinaSearchQuery] = useState('');
+  const [isJinaSearching, setIsJinaSearching] = useState(false);
+  const [jinaSearchResults, setJinaSearchResults] = useState<JinaSearchResult[]>([]);
+  const [jinaSearchError, setJinaSearchError] = useState('');
   
   const [previewArticle, setPreviewArticle] = useState<Article | null>(null);
   const [showStartModal, setShowStartModal] = useState(false);
@@ -70,6 +75,44 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       setAvailableCategories(cats);
   };
   
+  const handleJinaSearch = async () => {
+      if (!jinaSearchQuery.trim()) return;
+      setIsJinaSearching(true);
+      setJinaSearchError('');
+      setJinaSearchResults([]);
+      
+      try {
+          const results = await searchJina(jinaSearchQuery.trim(), jinaApiKey || undefined);
+          setJinaSearchResults(results);
+      } catch (e: any) {
+          setJinaSearchError(e.message || 'Search failed');
+      } finally {
+          setIsJinaSearching(false);
+      }
+  };
+
+  const handleImportFromSearch = async (url: string) => {
+      setJinaUrl(url);
+      setIsJinaLoading(true);
+      setJinaError('');
+      
+      try {
+          const result = await fetchJinaReader(url, jinaApiKey || undefined);
+          setTitle(result.title);
+          setContent(result.content);
+          setImageUrl(result.coverImageUrl || '');
+          setCategory('');
+          setIsEditing(true);
+          setActiveTab('public');
+          setJinaSearchResults([]);
+          setJinaSearchQuery('');
+      } catch (e: any) {
+          setJinaError(e.message || 'Failed to fetch content');
+      } finally {
+          setIsJinaLoading(false);
+      }
+  };
+
   const handleJinaFetch = async () => {
       if (!jinaUrl.trim()) return;
       setIsJinaLoading(true);
@@ -194,14 +237,56 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       </div>
 
       {activeTab === 'jina' && (
-          <div className="flex-1 overflow-hidden flex flex-col gap-6 max-w-2xl mx-auto w-full">
+          <div className="flex-1 overflow-y-auto flex flex-col gap-6 max-w-2xl mx-auto w-full">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><span>🔍</span> 搜索网页内容</h3>
+                  <div className="space-y-4">
+                      <div className="flex gap-2">
+                          <input 
+                              className="flex-1 bg-slate-50 border border-slate-300 rounded px-3 py-3 text-sm" 
+                              placeholder="搜索关键词，例如：AI 推荐算法" 
+                              value={jinaSearchQuery} 
+                              onChange={e => setJinaSearchQuery(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleJinaSearch()}
+                          />
+                          <button 
+                              onClick={handleJinaSearch} 
+                              disabled={isJinaSearching || !jinaSearchQuery.trim()} 
+                              className="px-6 bg-blue-600 text-white font-bold rounded-lg shadow-sm disabled:opacity-50"
+                          >
+                              {isJinaSearching ? '搜索中...' : '搜索'}
+                          </button>
+                      </div>
+                      {jinaSearchError && <div className="bg-red-50 text-red-700 p-3 rounded text-sm">{jinaSearchError}</div>}
+                      
+                      {jinaSearchResults.length > 0 && (
+                          <div className="space-y-3 max-h-64 overflow-y-auto">
+                              {jinaSearchResults.map((result, idx) => (
+                                  <div key={idx} className="p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-blue-300 transition-colors">
+                                      <div className="font-medium text-slate-800 mb-1">{result.title}</div>
+                                      <div className="text-xs text-slate-500 mb-2 truncate">{result.url}</div>
+                                      <div className="text-sm text-slate-600 line-clamp-2 mb-3">{result.description}</div>
+                                      <button 
+                                          onClick={() => handleImportFromSearch(result.url)}
+                                          disabled={isJinaLoading}
+                                          className="text-sm px-3 py-1 bg-pink-600 text-white rounded hover:bg-pink-700 disabled:opacity-50"
+                                      >
+                                          {isJinaLoading ? '导入中...' : '导入此文章'}
+                                      </button>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><span>🚀</span> 从 URL 导入文章</h3>
                   <div className="space-y-4">
                       <input className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-3 font-mono text-sm" placeholder="https://example.com" value={jinaUrl} onChange={e => setJinaUrl(e.target.value)} />
                       <input className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2 font-mono text-xs" placeholder="Jina API Key (Optional)" value={jinaApiKey} onChange={e => setJinaApiKey(e.target.value)} type="password" />
                       {jinaError && <div className="bg-red-50 text-red-700 p-3 rounded text-sm">{jinaError}</div>}
-                      <button onClick={handleJinaFetch} disabled={isJinaLoading || !jinaUrl.trim()} className="w-full bg-pink-600 text-white font-bold py-3 rounded-lg shadow-sm">{isJinaLoading ? '正在解析...' : '✨ 开始抓取'}</button>
+                      <button onClick={handleJinaFetch} disabled={isJinaLoading || !jinaUrl.trim()} className="w-full bg-pink-600 text-white font-bold py-3 rounded-lg shadow-sm disabled:opacity-50">{isJinaLoading ? '正在解析...' : '✨ 开始抓取'}</button>
                   </div>
               </div>
           </div>
