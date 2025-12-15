@@ -48,11 +48,15 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const [mcpTools, setMcpTools] = useState<MCPTool[]>([]);
   const [selectedTool, setSelectedTool] = useState<MCPTool | null>(null);
   const [toolArgs, setToolArgs] = useState<string>('{}');
+  const [toolParamValues, setToolParamValues] = useState<Record<string, string>>({});
+  const [toolResult, setToolResult] = useState<any>(null);
+  const [isCallingTool, setIsCallingTool] = useState(false);
   const [showAdvancedMcp, setShowAdvancedMcp] = useState(false);
   const [useNativeSSE, setUseNativeSSE] = useState(false);
   const [mcpHeaders, setMcpHeaders] = useState<string>(JSON.stringify({"ngrok-skip-browser-warning": "true"}, null, 2));
   const [lastError, setLastError] = useState<string>("");
   const [pingResult, setPingResult] = useState<string | null>(null);
+  const [showRawJson, setShowRawJson] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [mcpLogs]);
@@ -191,11 +195,58 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
 
   const handleCallTool = async () => {
       if (!mcpClient || !selectedTool) return;
+      setIsCallingTool(true);
+      setToolResult(null);
       try {
           const args = JSON.parse(toolArgs);
           const result = await mcpClient.callTool(selectedTool.name, args);
+          setToolResult(result);
           setMcpLogs(prev => [...prev, { timestamp: Date.now(), type: 'info', message: `Tool Result`, data: result }]);
-      } catch (e) { console.error(e); }
+      } catch (e: any) { 
+          setToolResult({ error: e.message });
+          console.error(e); 
+      } finally {
+          setIsCallingTool(false);
+      }
+  };
+  
+  const buildArgsFromParams = () => {
+      const args: Record<string, any> = {};
+      const schema = selectedTool?.inputSchema;
+      if (!schema?.properties) return args;
+      
+      for (const [key, prop] of Object.entries(schema.properties)) {
+          const val = toolParamValues[key];
+          if (val === undefined || val === '') continue;
+          
+          const propType = (prop as any).type;
+          if (propType === 'number' || propType === 'integer') {
+              args[key] = Number(val);
+          } else if (propType === 'boolean') {
+              args[key] = val === 'true';
+          } else if (propType === 'array' || propType === 'object') {
+              try { args[key] = JSON.parse(val); } catch { args[key] = val; }
+          } else {
+              args[key] = val;
+          }
+      }
+      return args;
+  };
+  
+  const handleCallToolWithParams = async () => {
+      if (!mcpClient || !selectedTool) return;
+      setIsCallingTool(true);
+      setToolResult(null);
+      try {
+          const args = buildArgsFromParams();
+          setToolArgs(JSON.stringify(args, null, 2));
+          const result = await mcpClient.callTool(selectedTool.name, args);
+          setToolResult(result);
+      } catch (e: any) { 
+          setToolResult({ error: e.message });
+      } finally {
+          setIsCallingTool(false);
+      }
   };
   
   const generateCurlCommand = () => { /* same as before */ return ""; }
@@ -351,7 +402,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       )}
 
       {activeTab === 'mcp' && (
-          <div className="flex-1 overflow-hidden flex flex-col gap-4 max-w-4xl mx-auto w-full">
+          <div className="flex-1 overflow-y-auto flex flex-col gap-4 max-w-4xl mx-auto w-full pb-8">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 shrink-0">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                       <span>🔌</span> MCP 服务器连接
@@ -454,7 +505,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
               </div>
 
               {mcpStatus === 'connected' && mcpTools.length > 0 && (
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 shrink-0">
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                       <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                           <span>🛠️</span> 可用工具 ({mcpTools.length})
                       </h3>
@@ -469,6 +520,8 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                                       const tool = mcpTools.find(t => t.name === e.target.value);
                                       setSelectedTool(tool || null);
                                       setToolArgs('{}');
+                                      setToolParamValues({});
+                                      setToolResult(null);
                                   }}
                               >
                                   {mcpTools.map(tool => (
@@ -485,48 +538,172 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                                       </div>
                                   )}
                                   
-                                  {selectedTool.inputSchema?.properties && (
-                                      <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded font-mono overflow-x-auto">
-                                          <div className="font-bold mb-1">参数 Schema:</div>
-                                          <pre>{JSON.stringify(selectedTool.inputSchema, null, 2)}</pre>
+                                  {selectedTool.inputSchema?.properties && Object.keys(selectedTool.inputSchema.properties).length > 0 && (
+                                      <div className="space-y-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                          <div className="text-sm font-medium text-slate-700">参数输入</div>
+                                          {Object.entries(selectedTool.inputSchema.properties).map(([key, prop]: [string, any]) => {
+                                              const isRequired = selectedTool.inputSchema?.required?.includes(key);
+                                              return (
+                                                  <div key={key}>
+                                                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                                                          {key} {isRequired && <span className="text-red-500">*</span>}
+                                                          <span className="text-slate-400 ml-2">({prop.type})</span>
+                                                      </label>
+                                                      {prop.description && (
+                                                          <div className="text-xs text-slate-400 mb-1">{prop.description}</div>
+                                                      )}
+                                                      {prop.type === 'boolean' ? (
+                                                          <select
+                                                              className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                                              value={toolParamValues[key] || ''}
+                                                              onChange={e => setToolParamValues(prev => ({...prev, [key]: e.target.value}))}
+                                                          >
+                                                              <option value="">-- 选择 --</option>
+                                                              <option value="true">true</option>
+                                                              <option value="false">false</option>
+                                                          </select>
+                                                      ) : prop.enum ? (
+                                                          <select
+                                                              className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                                              value={toolParamValues[key] || ''}
+                                                              onChange={e => setToolParamValues(prev => ({...prev, [key]: e.target.value}))}
+                                                          >
+                                                              <option value="">-- 选择 --</option>
+                                                              {prop.enum.map((v: string) => <option key={v} value={v}>{v}</option>)}
+                                                          </select>
+                                                      ) : prop.type === 'array' || prop.type === 'object' ? (
+                                                          <textarea
+                                                              className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm font-mono h-16"
+                                                              value={toolParamValues[key] || ''}
+                                                              onChange={e => setToolParamValues(prev => ({...prev, [key]: e.target.value}))}
+                                                              placeholder={prop.type === 'array' ? '["item1", "item2"]' : '{"key": "value"}'}
+                                                          />
+                                                      ) : (
+                                                          <input
+                                                              type={prop.type === 'number' || prop.type === 'integer' ? 'number' : 'text'}
+                                                              className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                                              value={toolParamValues[key] || ''}
+                                                              onChange={e => setToolParamValues(prev => ({...prev, [key]: e.target.value}))}
+                                                              placeholder={prop.default !== undefined ? `默认: ${prop.default}` : ''}
+                                                          />
+                                                      )}
+                                                  </div>
+                                              );
+                                          })}
                                       </div>
                                   )}
                                   
-                                  <div>
-                                      <label className="block text-sm font-medium text-slate-700 mb-1">调用参数 (JSON)</label>
+                                  <div className="flex gap-3">
+                                      <button 
+                                          onClick={handleCallToolWithParams}
+                                          disabled={isCallingTool}
+                                          className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-lg shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                                      >
+                                          {isCallingTool ? '⏳ 调用中...' : '▶ 调用工具'}
+                                      </button>
+                                  </div>
+                                  
+                                  <details className="text-xs">
+                                      <summary className="cursor-pointer text-slate-500 hover:text-slate-700">查看原始 JSON 参数</summary>
                                       <textarea 
-                                          className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2 font-mono text-sm h-24"
+                                          className="w-full bg-slate-100 border border-slate-300 rounded px-3 py-2 font-mono text-xs h-20 mt-2"
                                           value={toolArgs}
                                           onChange={e => setToolArgs(e.target.value)}
                                           placeholder='{"param1": "value1"}'
                                       />
-                                  </div>
-                                  
-                                  <button 
-                                      onClick={handleCallTool}
-                                      className="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm hover:bg-indigo-700"
-                                  >
-                                      ▶ 调用工具
-                                  </button>
+                                      <button 
+                                          onClick={handleCallTool}
+                                          disabled={isCallingTool}
+                                          className="mt-2 px-4 py-1 bg-slate-600 text-white text-xs rounded hover:bg-slate-700 disabled:opacity-50"
+                                      >
+                                          使用 JSON 调用
+                                      </button>
+                                  </details>
                               </>
                           )}
                       </div>
                   </div>
               )}
+              
+              {toolResult && (
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                      <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                              <span>📦</span> 调用结果
+                          </h3>
+                          <div className="flex gap-2">
+                              <button
+                                  onClick={() => setShowRawJson(!showRawJson)}
+                                  className="text-xs px-3 py-1 border border-slate-300 rounded hover:bg-slate-50"
+                              >
+                                  {showRawJson ? '格式化视图' : '原始 JSON'}
+                              </button>
+                              <button
+                                  onClick={() => navigator.clipboard.writeText(JSON.stringify(toolResult, null, 2))}
+                                  className="text-xs px-3 py-1 border border-slate-300 rounded hover:bg-slate-50"
+                              >
+                                  📋 复制
+                              </button>
+                              <button
+                                  onClick={() => setToolResult(null)}
+                                  className="text-xs px-3 py-1 text-red-600 border border-red-300 rounded hover:bg-red-50"
+                              >
+                                  ✕ 清除
+                              </button>
+                          </div>
+                      </div>
+                      
+                      {toolResult.error ? (
+                          <div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200">
+                              <strong>错误：</strong> {toolResult.error}
+                          </div>
+                      ) : showRawJson ? (
+                          <pre className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-auto max-h-96 text-xs font-mono">
+                              {JSON.stringify(toolResult, null, 2)}
+                          </pre>
+                      ) : (
+                          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 overflow-auto max-h-96">
+                              {toolResult.content ? (
+                                  <div className="space-y-3">
+                                      {Array.isArray(toolResult.content) ? toolResult.content.map((item: any, idx: number) => (
+                                          <div key={idx} className="p-3 bg-white rounded border border-slate-200">
+                                              {item.type === 'text' && (
+                                                  <div className="whitespace-pre-wrap text-sm text-slate-700">{item.text}</div>
+                                              )}
+                                              {item.type === 'image' && item.data && (
+                                                  <img src={`data:${item.mimeType};base64,${item.data}`} alt="" className="max-w-full rounded" />
+                                              )}
+                                              {item.type !== 'text' && item.type !== 'image' && (
+                                                  <pre className="text-xs font-mono text-slate-600">{JSON.stringify(item, null, 2)}</pre>
+                                              )}
+                                          </div>
+                                      )) : (
+                                          <pre className="text-xs font-mono text-slate-600">{JSON.stringify(toolResult.content, null, 2)}</pre>
+                                      )}
+                                  </div>
+                              ) : (
+                                  <pre className="text-xs font-mono text-slate-600">{JSON.stringify(toolResult, null, 2)}</pre>
+                              )}
+                          </div>
+                      )}
+                  </div>
+              )}
 
-              <div className="flex-1 min-h-0 bg-slate-900 rounded-xl overflow-hidden flex flex-col">
-                  <div className="px-4 py-2 bg-slate-800 text-slate-400 text-xs font-mono flex items-center justify-between shrink-0">
-                      <span>📋 通信日志</span>
+              <details className="bg-slate-900 rounded-xl overflow-hidden">
+                  <summary className="px-4 py-3 bg-slate-800 text-slate-400 text-sm font-mono flex items-center justify-between cursor-pointer hover:bg-slate-700">
+                      <span>📋 通信日志 ({mcpLogs.length})</span>
+                  </summary>
+                  <div className="flex items-center justify-end px-4 py-2 bg-slate-800 border-t border-slate-700">
                       <button 
                           onClick={() => setMcpLogs([])}
-                          className="text-slate-500 hover:text-slate-300"
+                          className="text-xs text-slate-500 hover:text-slate-300"
                       >
-                          清空
+                          清空日志
                       </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1">
+                  <div className="max-h-80 overflow-y-auto p-4 font-mono text-xs space-y-1">
                       {mcpLogs.length === 0 ? (
-                          <div className="text-slate-500 text-center py-8">等待连接...</div>
+                          <div className="text-slate-500 text-center py-4">等待连接...</div>
                       ) : (
                           mcpLogs.map((log, idx) => (
                               <div key={idx} className={`${
@@ -555,7 +732,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                       )}
                       <div ref={logsEndRef} />
                   </div>
-              </div>
+              </details>
           </div>
       )}
       
