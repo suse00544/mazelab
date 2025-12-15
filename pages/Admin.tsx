@@ -354,8 +354,214 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
           </div>
       )}
 
-      {/* Other tabs omitted for brevity but follow structure */}
-      {/* ... */}
+      {activeTab === 'mcp' && (
+          <div className="flex-1 overflow-hidden flex flex-col gap-4 max-w-4xl mx-auto w-full">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 shrink-0">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <span>🔌</span> MCP 服务器连接
+                      <span className={`ml-auto px-2 py-1 rounded text-xs font-medium ${
+                          mcpStatus === 'connected' ? 'bg-green-100 text-green-700' :
+                          mcpStatus === 'connecting' ? 'bg-yellow-100 text-yellow-700' :
+                          mcpStatus === 'error' ? 'bg-red-100 text-red-700' :
+                          'bg-slate-100 text-slate-600'
+                      }`}>
+                          {mcpStatus === 'connected' ? '✓ 已连接' :
+                           mcpStatus === 'connecting' ? '⏳ 连接中...' :
+                           mcpStatus === 'error' ? '✗ 错误' : '○ 未连接'}
+                      </span>
+                  </h3>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">服务器地址</label>
+                          <input 
+                              className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2 font-mono text-sm" 
+                              placeholder="https://your-mcp-server.com/mcp" 
+                              value={mcpUrl} 
+                              onChange={e => setMcpUrl(e.target.value)}
+                              disabled={mcpStatus === 'connecting'}
+                          />
+                      </div>
+                      
+                      <div>
+                          <button 
+                              onClick={() => setShowAdvancedMcp(!showAdvancedMcp)}
+                              className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"
+                          >
+                              {showAdvancedMcp ? '▼' : '▶'} 高级选项
+                          </button>
+                          
+                          {showAdvancedMcp && (
+                              <div className="mt-3 space-y-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                  <div className="flex items-center gap-3">
+                                      <input 
+                                          type="checkbox" 
+                                          id="useNativeSSE" 
+                                          checked={useNativeSSE} 
+                                          onChange={e => setUseNativeSSE(e.target.checked)}
+                                          className="w-4 h-4"
+                                      />
+                                      <label htmlFor="useNativeSSE" className="text-sm text-slate-700">
+                                          使用 Native EventSource (不支持自定义 Headers)
+                                      </label>
+                                  </div>
+                                  <div>
+                                      <label className="block text-sm font-medium text-slate-700 mb-1">自定义 Headers (JSON)</label>
+                                      <textarea 
+                                          className="w-full bg-white border border-slate-300 rounded px-3 py-2 font-mono text-xs h-20"
+                                          value={mcpHeaders}
+                                          onChange={e => setMcpHeaders(e.target.value)}
+                                          placeholder='{"Authorization": "Bearer xxx"}'
+                                      />
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                      
+                      {lastError && (
+                          <div className="bg-red-50 text-red-700 p-3 rounded text-sm border border-red-200">
+                              <strong>错误：</strong> {lastError}
+                          </div>
+                      )}
+                      
+                      <div className="flex gap-3">
+                          <button 
+                              onClick={handlePingTest}
+                              className="px-4 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50"
+                          >
+                              🏓 Ping 测试
+                          </button>
+                          {mcpStatus === 'connected' ? (
+                              <button 
+                                  onClick={() => { mcpClient?.disconnect(); setMcpStatus('disconnected'); setMcpTools([]); }}
+                                  className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg shadow-sm"
+                              >
+                                  断开连接
+                              </button>
+                          ) : (
+                              <button 
+                                  onClick={handleConnectMcp}
+                                  disabled={mcpStatus === 'connecting' || !mcpUrl.trim()}
+                                  className="flex-1 bg-emerald-600 text-white font-bold py-2 rounded-lg shadow-sm disabled:opacity-50"
+                              >
+                                  {mcpStatus === 'connecting' ? '连接中...' : '🔗 连接服务器'}
+                              </button>
+                          )}
+                      </div>
+                      
+                      {pingResult && (
+                          <div className={`p-3 rounded text-sm ${pingResult.includes('✅') ? 'bg-green-50 text-green-700' : pingResult.includes('❌') ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'}`}>
+                              {pingResult}
+                          </div>
+                      )}
+                  </div>
+              </div>
+
+              {mcpStatus === 'connected' && mcpTools.length > 0 && (
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 shrink-0">
+                      <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                          <span>🛠️</span> 可用工具 ({mcpTools.length})
+                      </h3>
+                      
+                      <div className="space-y-4">
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">选择工具</label>
+                              <select 
+                                  className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2"
+                                  value={selectedTool?.name || ''}
+                                  onChange={e => {
+                                      const tool = mcpTools.find(t => t.name === e.target.value);
+                                      setSelectedTool(tool || null);
+                                      setToolArgs('{}');
+                                  }}
+                              >
+                                  {mcpTools.map(tool => (
+                                      <option key={tool.name} value={tool.name}>{tool.name}</option>
+                                  ))}
+                              </select>
+                          </div>
+                          
+                          {selectedTool && (
+                              <>
+                                  {selectedTool.description && (
+                                      <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded">
+                                          {selectedTool.description}
+                                      </div>
+                                  )}
+                                  
+                                  {selectedTool.inputSchema?.properties && (
+                                      <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded font-mono overflow-x-auto">
+                                          <div className="font-bold mb-1">参数 Schema:</div>
+                                          <pre>{JSON.stringify(selectedTool.inputSchema, null, 2)}</pre>
+                                      </div>
+                                  )}
+                                  
+                                  <div>
+                                      <label className="block text-sm font-medium text-slate-700 mb-1">调用参数 (JSON)</label>
+                                      <textarea 
+                                          className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2 font-mono text-sm h-24"
+                                          value={toolArgs}
+                                          onChange={e => setToolArgs(e.target.value)}
+                                          placeholder='{"param1": "value1"}'
+                                      />
+                                  </div>
+                                  
+                                  <button 
+                                      onClick={handleCallTool}
+                                      className="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm hover:bg-indigo-700"
+                                  >
+                                      ▶ 调用工具
+                                  </button>
+                              </>
+                          )}
+                      </div>
+                  </div>
+              )}
+
+              <div className="flex-1 min-h-0 bg-slate-900 rounded-xl overflow-hidden flex flex-col">
+                  <div className="px-4 py-2 bg-slate-800 text-slate-400 text-xs font-mono flex items-center justify-between shrink-0">
+                      <span>📋 通信日志</span>
+                      <button 
+                          onClick={() => setMcpLogs([])}
+                          className="text-slate-500 hover:text-slate-300"
+                      >
+                          清空
+                      </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1">
+                      {mcpLogs.length === 0 ? (
+                          <div className="text-slate-500 text-center py-8">等待连接...</div>
+                      ) : (
+                          mcpLogs.map((log, idx) => (
+                              <div key={idx} className={`${
+                                  log.type === 'error' ? 'text-red-400' :
+                                  log.type === 'send' ? 'text-blue-400' :
+                                  log.type === 'recv' ? 'text-green-400' :
+                                  'text-slate-400'
+                              }`}>
+                                  <span className="text-slate-600">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                                  <span className={`mx-2 px-1 rounded text-xs ${
+                                      log.type === 'error' ? 'bg-red-900' :
+                                      log.type === 'send' ? 'bg-blue-900' :
+                                      log.type === 'recv' ? 'bg-green-900' :
+                                      'bg-slate-700'
+                                  }`}>
+                                      {log.type.toUpperCase()}
+                                  </span>
+                                  {log.message}
+                                  {log.data && (
+                                      <pre className="mt-1 ml-4 text-slate-500 whitespace-pre-wrap break-all">
+                                          {typeof log.data === 'string' ? log.data : JSON.stringify(log.data, null, 2)}
+                                      </pre>
+                                  )}
+                              </div>
+                          ))
+                      )}
+                      <div ref={logsEndRef} />
+                  </div>
+              </div>
+          </div>
+      )}
       
       {activeTab === 'public' && !isEditing && (
          <div className="mb-6 flex justify-end shrink-0"><button onClick={() => setIsEditing(true)} className="bg-indigo-600 text-white px-4 py-2 rounded shadow-sm text-sm">+ 添加公共内容</button></div>
