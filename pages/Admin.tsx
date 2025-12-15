@@ -215,11 +215,67 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       )}
       
       {isEditing && (
-          /* Editor form ... */
           <div className="bg-white p-6 rounded-xl shadow-lg mb-8 border border-slate-200 shrink-0">
-             {/* ... */}
-             <div className="flex gap-3 justify-end pt-2">
-                 <button onClick={() => setIsEditing(false)} className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+             <h3 className="text-lg font-bold text-slate-800 mb-4">编辑文章</h3>
+             <div className="space-y-4">
+                 <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-1">标题</label>
+                     <input 
+                         type="text" 
+                         value={title} 
+                         onChange={e => setTitle(e.target.value)}
+                         className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2"
+                         placeholder="文章标题"
+                     />
+                 </div>
+                 <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-1">封面图片 URL</label>
+                     <input 
+                         type="text" 
+                         value={imageUrl} 
+                         onChange={e => setImageUrl(e.target.value)}
+                         className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2"
+                         placeholder="https://..."
+                     />
+                 </div>
+                 <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-1">分类</label>
+                     <div className="flex gap-2">
+                         <select 
+                             value={category} 
+                             onChange={e => setCategory(e.target.value)}
+                             className="flex-1 bg-slate-50 border border-slate-300 rounded px-3 py-2"
+                         >
+                             <option value="">选择分类</option>
+                             {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                         </select>
+                         <input 
+                             type="text" 
+                             value={newCategoryInput} 
+                             onChange={e => setNewCategoryInput(e.target.value)}
+                             className="w-32 bg-slate-50 border border-slate-300 rounded px-3 py-2"
+                             placeholder="新分类"
+                         />
+                         <button 
+                             onClick={handleAddCategory} 
+                             className="px-3 py-2 bg-slate-200 rounded text-sm"
+                         >
+                             添加
+                         </button>
+                     </div>
+                 </div>
+                 <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-1">正文内容 (Markdown)</label>
+                     <textarea 
+                         value={content} 
+                         onChange={e => setContent(e.target.value)}
+                         className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2 h-64 font-mono text-sm"
+                         placeholder="文章正文..."
+                     />
+                 </div>
+             </div>
+             <div className="flex gap-3 justify-end pt-4">
+                 <button onClick={() => { setIsEditing(false); resetForm(); }} className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
                  <button onClick={handleSave} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold">保存内容</button>
              </div>
           </div>
