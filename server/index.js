@@ -416,6 +416,33 @@ app.post('/api/mcp/proxy', async (req, res) => {
     }
 });
 
+// 构建绕过防盗链的请求头
+function buildImageHeaders(url) {
+    const urlObj = new URL(url);
+    const origin = urlObj.origin;
+    
+    // 小红书特殊处理
+    const isXHS = url.includes('xhscdn.com') || url.includes('xiaohongshu');
+    
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': isXHS ? 'https://www.xiaohongshu.com/' : origin,
+        'Origin': isXHS ? 'https://www.xiaohongshu.com' : origin,
+        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'image',
+        'Sec-Fetch-Mode': 'no-cors',
+        'Sec-Fetch-Site': 'cross-site',
+        'Connection': 'keep-alive',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+    };
+}
+
 // Image Proxy - 下载外部图片并返回，解决跨域和防盗链问题
 app.get('/api/image-proxy', async (req, res) => {
     try {
@@ -426,13 +453,8 @@ app.get('/api/image-proxy', async (req, res) => {
 
         console.log('[Image Proxy] Fetching:', url);
         
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': new URL(url).origin,
-                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-            }
-        });
+        const headers = buildImageHeaders(url);
+        const response = await fetch(url, { headers });
 
         if (!response.ok) {
             console.error('[Image Proxy] Failed:', response.status);
@@ -463,15 +485,11 @@ app.post('/api/image-download', async (req, res) => {
 
         console.log('[Image Download] Downloading:', url);
         
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': new URL(url).origin,
-                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-            }
-        });
+        const headers = buildImageHeaders(url);
+        const response = await fetch(url, { headers });
 
         if (!response.ok) {
+            console.error('[Image Download] Failed:', response.status, 'for:', url);
             return res.status(response.status).json({ error: `Failed to download: ${response.status}` });
         }
 
