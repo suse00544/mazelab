@@ -62,28 +62,40 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
     desc: string;
     nickname: string;
     avatar: string;
-    urlDefault: string;
+    imageList: string[]; // 支持多张图片
   }>>([]);
   const [isSavingMcpItem, setIsSavingMcpItem] = useState<number | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // 从 MCP 结果中解析 title、desc、nickname、avatar、urlDefault 字段
-  const parseMcpResult = (result: any): Array<{title: string; desc: string; nickname: string; avatar: string; urlDefault: string}> => {
-    const items: Array<{title: string; desc: string; nickname: string; avatar: string; urlDefault: string}> = [];
+  // 从 MCP 结果中解析 title、desc、nickname、avatar、imageList 字段
+  const parseMcpResult = (result: any): Array<{title: string; desc: string; nickname: string; avatar: string; imageList: string[]}> => {
+    const items: Array<{title: string; desc: string; nickname: string; avatar: string; imageList: string[]}> = [];
     
     const extractItem = (obj: any) => {
       if (!obj || typeof obj !== 'object') return;
       
       // 检查当前对象是否包含我们需要的字段
-      const hasTargetFields = ['title', 'desc', 'nickname', 'avatar', 'urlDefault'].some(key => key in obj);
+      const hasTargetFields = ['title', 'desc', 'nickname', 'avatar', 'imageList'].some(key => key in obj);
       
       if (hasTargetFields) {
+        // 解析 imageList 数组，提取每个元素的 urlDefault
+        let imageUrls: string[] = [];
+        if (obj.imageList && Array.isArray(obj.imageList)) {
+          imageUrls = obj.imageList
+            .map((img: any) => img.urlDefault || img.url || img.src || (typeof img === 'string' ? img : ''))
+            .filter((url: string) => url);
+        } else if (obj.urlDefault) {
+          imageUrls = [obj.urlDefault];
+        } else if (obj.imageUrl) {
+          imageUrls = [obj.imageUrl];
+        }
+        
         items.push({
           title: obj.title || '',
           desc: obj.desc || obj.description || '',
           nickname: obj.nickname || obj.author || obj.userName || '',
           avatar: obj.avatar || obj.avatarUrl || '',
-          urlDefault: obj.urlDefault || obj.imageUrl || obj.coverUrl || obj.image || ''
+          imageList: imageUrls
         });
       }
       
@@ -139,7 +151,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   };
 
   // 保存 MCP 解析的内容为文章
-  const handleSaveMcpItem = async (item: {title: string; desc: string; nickname: string; avatar: string; urlDefault: string}, index: number) => {
+  const handleSaveMcpItem = async (item: {title: string; desc: string; nickname: string; avatar: string; imageList: string[]}, index: number) => {
     if (!item.title.trim()) {
       alert('标题不能为空');
       return;
@@ -147,16 +159,19 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
     
     setIsSavingMcpItem(index);
     try {
-      // 下载图片到服务器
-      let savedImageUrl = '';
-      if (item.urlDefault) {
-        const downloaded = await downloadImage(item.urlDefault);
-        savedImageUrl = downloaded || item.urlDefault; // 如果下载失败，使用原始URL
+      // 下载所有图片到服务器
+      const downloadedImages: string[] = [];
+      for (const imgUrl of item.imageList) {
+        const downloaded = await downloadImage(imgUrl);
+        downloadedImages.push(downloaded || imgUrl); // 如果下载失败，使用原始URL
       }
       
-      // 将作者信息放到 content 开头
+      // 将作者信息放到 content 开头，图片放到内容中
       const authorInfo = item.nickname ? `> 作者: ${item.nickname}\n\n` : '';
-      const fullContent = authorInfo + item.desc;
+      const imagesMarkdown = downloadedImages.length > 0 
+        ? downloadedImages.map(url => `![图片](${url})`).join('\n\n') + '\n\n'
+        : '';
+      const fullContent = authorInfo + item.desc + '\n\n' + imagesMarkdown;
       
       const newArticle: Article = {
         id: `mcp-${Date.now()}-${index}`,
@@ -170,7 +185,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
         created_at: Date.now(),
         isPublic: true,
         ownerId: user.id,
-        imageUrl: savedImageUrl || undefined
+        imageUrl: downloadedImages[0] || undefined // 第一张图作为封面
       };
       
       await db.saveArticle(newArticle);
@@ -833,15 +848,18 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                                                   <h4 className="text-lg font-bold text-slate-800 mb-2">{item.title}</h4>
                                               )}
                                               
-                                              {/* 内容图片 - 使用代理 */}
-                                              {item.urlDefault && (
-                                                  <div className="mb-3">
-                                                      <img 
-                                                          src={`/api/image-proxy?url=${encodeURIComponent(item.urlDefault)}`} 
-                                                          alt="内容图片" 
-                                                          className="w-full max-h-64 object-cover rounded-lg border border-slate-200"
-                                                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                                      />
+                                              {/* 内容图片列表 - 使用代理 */}
+                                              {item.imageList && item.imageList.length > 0 && (
+                                                  <div className="mb-3 grid gap-2" style={{ gridTemplateColumns: item.imageList.length === 1 ? '1fr' : 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+                                                      {item.imageList.map((imgUrl, imgIdx) => (
+                                                          <img 
+                                                              key={imgIdx}
+                                                              src={`/api/image-proxy?url=${encodeURIComponent(imgUrl)}`} 
+                                                              alt={`图片 ${imgIdx + 1}`} 
+                                                              className="w-full max-h-64 object-cover rounded-lg border border-slate-200"
+                                                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                          />
+                                                      ))}
                                                   </div>
                                               )}
                                               
@@ -869,7 +887,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                                                       onClick={() => {
                                                           setTitle(item.title);
                                                           setContent(item.desc);
-                                                          setImageUrl(item.urlDefault);
+                                                          setImageUrl(item.imageList[0] || '');
                                                           setCategory('');
                                                           setIsEditing(true);
                                                           setActiveTab('public');
