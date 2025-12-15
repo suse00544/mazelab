@@ -225,7 +225,10 @@ app.post('/api/config', async (req, res) => {
     }
 });
 
-// --- JINA & IMAGE PROXY ENDPOINT ---
+// --- JINA API ENDPOINTS ---
+// Get your Jina AI API key for free: https://jina.ai/?sui=apikey
+const JINA_API_KEY = process.env.JINA_API_KEY;
+
 const downloadImage = async (url) => {
     try {
         const response = await fetch(url);
@@ -242,34 +245,43 @@ const downloadImage = async (url) => {
     }
 };
 
+// Reader API - fetch content from a single URL
 app.post('/api/jina/import', async (req, res) => {
     const { url, apiKey } = req.body;
     if (!url) return res.status(400).json({ error: "URL required" });
 
-    // 1. Fetch from Jina
-    const jinaUrl = `https://r.jina.ai/${url}`;
-    const headers = { 'Accept': 'application/json', 'X-Respond-With': 'json' };
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    const token = apiKey || JINA_API_KEY;
+    if (!token) return res.status(400).json({ error: "Jina API Key required" });
 
     try {
-        const jinaRes = await fetch(jinaUrl, { headers });
-        if (!jinaRes.ok) throw new Error(`Jina API Error: ${jinaRes.status}`);
+        const jinaRes = await fetch('https://r.jina.ai/', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Return-Format': 'markdown'
+            },
+            body: JSON.stringify({ url })
+        });
+        
+        if (!jinaRes.ok) {
+            const errText = await jinaRes.text();
+            throw new Error(`Jina API Error: ${jinaRes.status} - ${errText}`);
+        }
+        
         const json = await jinaRes.json();
         const data = json.data || {};
         
         let content = data.content || '';
         let coverImageUrl = null;
         
-        // 2. Extract First Image
+        // Extract First Image from markdown
         const imgRegex = /!\[.*?\]\((.*?)\)/;
         const match = content.match(imgRegex);
         if (match && match[1]) {
-            const rawImgUrl = match[1];
-            // 3. Download Image
-            const localUrl = await downloadImage(rawImgUrl);
-            if (localUrl) {
-                coverImageUrl = localUrl;
-            }
+            const localUrl = await downloadImage(match[1]);
+            if (localUrl) coverImageUrl = localUrl;
         }
 
         res.json({
@@ -280,6 +292,40 @@ app.post('/api/jina/import', async (req, res) => {
         });
 
     } catch (e) {
+        console.error("Jina Reader Error:", e.message, e.stack);
+        res.status(500).json({ error: e.message || 'Unknown error occurred' });
+    }
+});
+
+// Search API - search and get results
+app.post('/api/jina/search', async (req, res) => {
+    const { query, apiKey } = req.body;
+    if (!query) return res.status(400).json({ error: "Query required" });
+
+    const token = apiKey || JINA_API_KEY;
+    if (!token) return res.status(400).json({ error: "Jina API Key required" });
+
+    try {
+        const jinaRes = await fetch('https://s.jina.ai/', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ q: query })
+        });
+        
+        if (!jinaRes.ok) {
+            const errText = await jinaRes.text();
+            throw new Error(`Jina Search Error: ${jinaRes.status} - ${errText}`);
+        }
+        
+        const json = await jinaRes.json();
+        res.json(json);
+
+    } catch (e) {
+        console.error("Jina Search Error:", e.message);
         res.status(500).json({ error: e.message });
     }
 });

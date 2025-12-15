@@ -53,3 +53,8 @@ externalPort = 3001
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+JINA_API_KEY = "jina_243aefcda34c481199f025626fdc7c27uqio96mxUChsnt741dAxHSfQ7pSy"
