@@ -442,14 +442,89 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                             <td className="p-3"><span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">{a.category}</span></td>
                             <td className="p-3">
                                 <div className="flex gap-2">
-                                   <button onClick={() => handleToggleSeed(a.id)} className="text-xs border px-2 py-1 rounded">{mySeedIds.includes(a.id) ? '移除配置' : '加入配置'}</button>
-                                   <button onClick={() => handleDelete(a.id)} className="text-xs text-red-500 border px-2 py-1 rounded">删除</button>
+                                   <button onClick={() => setPreviewArticle(a)} className="text-xs border px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100">预览</button>
+                                   {activeTab !== 'trash' && (
+                                     <button onClick={() => handleToggleSeed(a.id)} className="text-xs border px-2 py-1 rounded">{mySeedIds.includes(a.id) ? '移除配置' : '加入配置'}</button>
+                                   )}
+                                   {activeTab === 'trash' ? (
+                                     <button onClick={() => handleRestore(a.id)} className="text-xs text-green-600 border px-2 py-1 rounded">恢复</button>
+                                   ) : (
+                                     <button onClick={() => handleDelete(a.id)} className="text-xs text-red-500 border px-2 py-1 rounded">删除</button>
+                                   )}
                                 </div>
                             </td>
                         </tr>
                       ))}
                   </tbody>
               </table>
+              
+              <div className="md:hidden space-y-3 p-3">
+                  {displayArticles.map(a => (
+                    <div key={a.id} className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                        <div className="font-medium text-slate-800 mb-1">{a.title}</div>
+                        <div className="text-xs text-slate-500 mb-2 line-clamp-2">{a.summary}</div>
+                        <div className="flex items-center justify-between">
+                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">{a.category}</span>
+                            <div className="flex gap-2">
+                                <button onClick={() => setPreviewArticle(a)} className="text-xs border px-2 py-1 rounded bg-indigo-50 text-indigo-700">预览</button>
+                                {activeTab === 'trash' ? (
+                                  <button onClick={() => handleRestore(a.id)} className="text-xs text-green-600 border px-2 py-1 rounded">恢复</button>
+                                ) : (
+                                  <button onClick={() => handleDelete(a.id)} className="text-xs text-red-500 border px-2 py-1 rounded">删除</button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      {previewArticle && (
+          <div className="fixed inset-0 bg-white z-50 flex flex-col">
+              <div className="h-16 border-b flex items-center justify-between px-4 bg-white shrink-0">
+                  <button 
+                      onClick={() => setPreviewArticle(null)}
+                      className="text-slate-600 hover:text-slate-900 font-medium flex items-center"
+                  >
+                      ← 返回列表
+                  </button>
+                  <div className="flex gap-2">
+                      {activeTab !== 'trash' && (
+                          <button 
+                              onClick={() => { handleToggleSeed(previewArticle.id); }}
+                              className={`px-3 py-1.5 rounded text-sm font-medium ${mySeedIds.includes(previewArticle.id) ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}
+                          >
+                              {mySeedIds.includes(previewArticle.id) ? '★ 已加入配置' : '☆ 加入配置'}
+                          </button>
+                      )}
+                  </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto w-full">
+                  <div className="max-w-2xl mx-auto p-4 pt-6">
+                      <div className="mb-6">
+                          <span className="text-blue-600 font-medium text-sm">{previewArticle.category}</span>
+                          <h1 className="text-3xl font-bold text-slate-900 mt-1 mb-4">{previewArticle.title}</h1>
+                          <div className="flex gap-2 mb-6">
+                              {previewArticle.tags?.map(t => <span key={t} className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs">#{t}</span>)}
+                          </div>
+                          {previewArticle.imageUrl && (
+                              <div className="w-full h-64 md:h-80 rounded-xl overflow-hidden mb-8">
+                                  <img src={previewArticle.imageUrl} alt={previewArticle.title} className="w-full h-full object-cover" />
+                              </div>
+                          )}
+                      </div>
+
+                      <div className="border-b border-slate-100 pb-8 mb-8">
+                          <MarkdownRenderer content={previewArticle.content || ''} />
+                      </div>
+
+                      <div className="h-12 flex items-center justify-center text-slate-300 text-xs">
+                          Article ID: {previewArticle.id}
+                      </div>
+                  </div>
+              </div>
           </div>
       )}
     </div>
