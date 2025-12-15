@@ -57,7 +57,105 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const [lastError, setLastError] = useState<string>("");
   const [pingResult, setPingResult] = useState<string | null>(null);
   const [showRawJson, setShowRawJson] = useState(false);
+  const [parsedMcpItems, setParsedMcpItems] = useState<Array<{
+    title: string;
+    desc: string;
+    nickname: string;
+    avatar: string;
+    urlDefault: string;
+  }>>([]);
+  const [isSavingMcpItem, setIsSavingMcpItem] = useState<number | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // 从 MCP 结果中解析 title、desc、nickname、avatar、urlDefault 字段
+  const parseMcpResult = (result: any): Array<{title: string; desc: string; nickname: string; avatar: string; urlDefault: string}> => {
+    const items: Array<{title: string; desc: string; nickname: string; avatar: string; urlDefault: string}> = [];
+    
+    const extractItem = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return;
+      
+      // 检查当前对象是否包含我们需要的字段
+      const hasTargetFields = ['title', 'desc', 'nickname', 'avatar', 'urlDefault'].some(key => key in obj);
+      
+      if (hasTargetFields) {
+        items.push({
+          title: obj.title || '',
+          desc: obj.desc || obj.description || '',
+          nickname: obj.nickname || obj.author || obj.userName || '',
+          avatar: obj.avatar || obj.avatarUrl || '',
+          urlDefault: obj.urlDefault || obj.imageUrl || obj.coverUrl || obj.image || ''
+        });
+      }
+      
+      // 递归搜索嵌套对象和数组
+      if (Array.isArray(obj)) {
+        obj.forEach(item => extractItem(item));
+      } else {
+        Object.values(obj).forEach(value => {
+          if (typeof value === 'object' && value !== null) {
+            extractItem(value);
+          }
+        });
+      }
+    };
+    
+    // 如果 result.content 是文本类型，尝试解析 JSON
+    if (result?.content && Array.isArray(result.content)) {
+      result.content.forEach((item: any) => {
+        if (item.type === 'text' && item.text) {
+          try {
+            const parsed = JSON.parse(item.text);
+            extractItem(parsed);
+          } catch {
+            // 不是 JSON，跳过
+          }
+        }
+      });
+    }
+    
+    // 也直接搜索 result 本身
+    extractItem(result);
+    
+    return items;
+  };
+  
+  // 保存 MCP 解析的内容为文章
+  const handleSaveMcpItem = async (item: {title: string; desc: string; nickname: string; avatar: string; urlDefault: string}, index: number) => {
+    if (!item.title.trim()) {
+      alert('标题不能为空');
+      return;
+    }
+    
+    setIsSavingMcpItem(index);
+    try {
+      // 将作者信息放到 content 开头
+      const authorInfo = item.nickname ? `> 作者: ${item.nickname}\n\n` : '';
+      const fullContent = authorInfo + item.desc;
+      
+      const newArticle: Article = {
+        id: `mcp-${Date.now()}-${index}`,
+        title: item.title,
+        content: fullContent,
+        summary: item.desc.substring(0, 100) + '...',
+        category: 'MCP导入',
+        tags: [],
+        tone: 'Professional',
+        estimatedReadTime: Math.ceil(item.desc.split(' ').length / 200 * 60),
+        created_at: Date.now(),
+        isPublic: true,
+        ownerId: user.id,
+        imageUrl: item.urlDefault || undefined
+      };
+      
+      await db.saveArticle(newArticle);
+      await loadData();
+      alert('保存成功！已添加到公共库。');
+    } catch (e: any) {
+      alert('保存失败: ' + e.message);
+    } finally {
+      setIsSavingMcpItem(null);
+    }
+  };
 
   useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [mcpLogs]);
 
@@ -197,10 +295,14 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       if (!mcpClient || !selectedTool) return;
       setIsCallingTool(true);
       setToolResult(null);
+      setParsedMcpItems([]);
       try {
           const args = JSON.parse(toolArgs);
           const result = await mcpClient.callTool(selectedTool.name, args);
           setToolResult(result);
+          // 自动解析结果
+          const parsed = parseMcpResult(result);
+          setParsedMcpItems(parsed);
           setMcpLogs(prev => [...prev, { timestamp: Date.now(), type: 'info', message: `Tool Result`, data: result }]);
       } catch (e: any) { 
           setToolResult({ error: e.message });
@@ -237,11 +339,15 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       if (!mcpClient || !selectedTool) return;
       setIsCallingTool(true);
       setToolResult(null);
+      setParsedMcpItems([]);
       try {
           const args = buildArgsFromParams();
           setToolArgs(JSON.stringify(args, null, 2));
           const result = await mcpClient.callTool(selectedTool.name, args);
           setToolResult(result);
+          // 自动解析结果
+          const parsed = parseMcpResult(result);
+          setParsedMcpItems(parsed);
       } catch (e: any) { 
           setToolResult({ error: e.message });
       } finally {
@@ -630,13 +736,18 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                       <div className="flex items-center justify-between mb-4">
                           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                               <span>📦</span> 调用结果
+                              {parsedMcpItems.length > 0 && (
+                                  <span className="text-sm font-normal text-emerald-600">
+                                      (识别到 {parsedMcpItems.length} 条内容)
+                                  </span>
+                              )}
                           </h3>
                           <div className="flex gap-2">
                               <button
                                   onClick={() => setShowRawJson(!showRawJson)}
                                   className="text-xs px-3 py-1 border border-slate-300 rounded hover:bg-slate-50"
                               >
-                                  {showRawJson ? '格式化视图' : '原始 JSON'}
+                                  {showRawJson ? '结构化视图' : '原始 JSON'}
                               </button>
                               <button
                                   onClick={() => navigator.clipboard.writeText(JSON.stringify(toolResult, null, 2))}
@@ -645,7 +756,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                                   📋 复制
                               </button>
                               <button
-                                  onClick={() => setToolResult(null)}
+                                  onClick={() => { setToolResult(null); setParsedMcpItems([]); }}
                                   className="text-xs px-3 py-1 text-red-600 border border-red-300 rounded hover:bg-red-50"
                               >
                                   ✕ 清除
@@ -662,28 +773,120 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                               {JSON.stringify(toolResult, null, 2)}
                           </pre>
                       ) : (
-                          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 overflow-auto max-h-96">
-                              {toolResult.content ? (
-                                  <div className="space-y-3">
-                                      {Array.isArray(toolResult.content) ? toolResult.content.map((item: any, idx: number) => (
-                                          <div key={idx} className="p-3 bg-white rounded border border-slate-200">
-                                              {item.type === 'text' && (
-                                                  <div className="whitespace-pre-wrap text-sm text-slate-700">{item.text}</div>
+                          <div className="space-y-4">
+                              {/* 结构化内容卡片 */}
+                              {parsedMcpItems.length > 0 && (
+                                  <div className="space-y-4">
+                                      <div className="text-sm font-medium text-slate-600 flex items-center gap-2">
+                                          <span>📝</span> 解析的内容
+                                      </div>
+                                      {parsedMcpItems.map((item, idx) => (
+                                          <div key={idx} className="bg-gradient-to-r from-slate-50 to-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                              {/* 头部：头像和用户名 */}
+                                              <div className="flex items-center gap-3 mb-3">
+                                                  {item.avatar ? (
+                                                      <img 
+                                                          src={item.avatar} 
+                                                          alt={item.nickname || '用户'} 
+                                                          className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
+                                                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                      />
+                                                  ) : (
+                                                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white font-bold">
+                                                          {(item.nickname || '?')[0]}
+                                                      </div>
+                                                  )}
+                                                  <div>
+                                                      <div className="font-medium text-slate-800">{item.nickname || '未知用户'}</div>
+                                                      <div className="text-xs text-slate-400">作者</div>
+                                                  </div>
+                                              </div>
+                                              
+                                              {/* 标题 */}
+                                              {item.title && (
+                                                  <h4 className="text-lg font-bold text-slate-800 mb-2">{item.title}</h4>
                                               )}
-                                              {item.type === 'image' && item.data && (
-                                                  <img src={`data:${item.mimeType};base64,${item.data}`} alt="" className="max-w-full rounded" />
+                                              
+                                              {/* 内容图片 */}
+                                              {item.urlDefault && (
+                                                  <div className="mb-3">
+                                                      <img 
+                                                          src={item.urlDefault} 
+                                                          alt="内容图片" 
+                                                          className="w-full max-h-64 object-cover rounded-lg border border-slate-200"
+                                                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                      />
+                                                  </div>
                                               )}
-                                              {item.type !== 'text' && item.type !== 'image' && (
-                                                  <pre className="text-xs font-mono text-slate-600">{JSON.stringify(item, null, 2)}</pre>
+                                              
+                                              {/* 描述/详情 */}
+                                              {item.desc && (
+                                                  <div className="text-sm text-slate-600 mb-4 whitespace-pre-wrap line-clamp-5">
+                                                      {item.desc}
+                                                  </div>
+                                              )}
+                                              
+                                              {/* 操作按钮 */}
+                                              <div className="flex gap-2 pt-3 border-t border-slate-100">
+                                                  <button
+                                                      onClick={() => handleSaveMcpItem(item, idx)}
+                                                      disabled={isSavingMcpItem === idx || !item.title}
+                                                      className="flex-1 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                  >
+                                                      {isSavingMcpItem === idx ? (
+                                                          <>⏳ 保存中...</>
+                                                      ) : (
+                                                          <>💾 保存到服务器</>
+                                                      )}
+                                                  </button>
+                                                  <button
+                                                      onClick={() => {
+                                                          setTitle(item.title);
+                                                          setContent(item.desc);
+                                                          setImageUrl(item.urlDefault);
+                                                          setCategory('');
+                                                          setIsEditing(true);
+                                                          setActiveTab('public');
+                                                      }}
+                                                      className="px-4 py-2 border border-slate-300 text-slate-600 text-sm rounded-lg hover:bg-slate-50 flex items-center gap-1"
+                                                  >
+                                                      ✏️ 编辑后保存
+                                                  </button>
+                                              </div>
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
+                              
+                              {/* 原始内容展示 */}
+                              <details className={parsedMcpItems.length > 0 ? '' : 'open'}>
+                                  <summary className="cursor-pointer text-sm text-slate-500 hover:text-slate-700 py-2">
+                                      {parsedMcpItems.length > 0 ? '查看原始返回内容' : '返回内容'}
+                                  </summary>
+                                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 overflow-auto max-h-96 mt-2">
+                                      {toolResult.content ? (
+                                          <div className="space-y-3">
+                                              {Array.isArray(toolResult.content) ? toolResult.content.map((item: any, idx: number) => (
+                                                  <div key={idx} className="p-3 bg-white rounded border border-slate-200">
+                                                      {item.type === 'text' && (
+                                                          <div className="whitespace-pre-wrap text-sm text-slate-700">{item.text}</div>
+                                                      )}
+                                                      {item.type === 'image' && item.data && (
+                                                          <img src={`data:${item.mimeType};base64,${item.data}`} alt="" className="max-w-full rounded" />
+                                                      )}
+                                                      {item.type !== 'text' && item.type !== 'image' && (
+                                                          <pre className="text-xs font-mono text-slate-600">{JSON.stringify(item, null, 2)}</pre>
+                                                      )}
+                                                  </div>
+                                              )) : (
+                                                  <pre className="text-xs font-mono text-slate-600">{JSON.stringify(toolResult.content, null, 2)}</pre>
                                               )}
                                           </div>
-                                      )) : (
-                                          <pre className="text-xs font-mono text-slate-600">{JSON.stringify(toolResult.content, null, 2)}</pre>
+                                      ) : (
+                                          <pre className="text-xs font-mono text-slate-600">{JSON.stringify(toolResult, null, 2)}</pre>
                                       )}
                                   </div>
-                              ) : (
-                                  <pre className="text-xs font-mono text-slate-600">{JSON.stringify(toolResult, null, 2)}</pre>
-                              )}
+                              </details>
                           </div>
                       )}
                   </div>
