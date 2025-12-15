@@ -1,0 +1,5 @@
+{
+  "name": "Maze Lab",
+  "description": "A research platform to verify SOTA LLM behavior in recommendation systems. Features dual-track generation (Strategy vs. Content), raw interaction tracking, and split-screen analysis.",
+  "requestFramePermissions": []
+}
