@@ -157,19 +157,15 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       }
   };
 
-  const handleConnectMcp = async () => { /* Same as before, no DB usage */ 
+  const handleConnectMcp = async () => {
       const client = new MCPClient((log) => setMcpLogs(prev => [...prev, log]));
       setMcpClient(client);
       setMcpStatus('connecting');
       setLastError("");
       setPingResult(null);
 
-      let headers: Record<string, string> = {};
-      try { headers = JSON.parse(mcpHeaders); } catch(e) { alert('Invalid JSON in Headers'); setMcpStatus('disconnected'); return; }
-
       try {
-          await client.connect(mcpUrl, { useNativeEventSource: useNativeSSE, headers: headers });
-          await client.initialize();
+          await client.connect(mcpUrl);
           const tools = await client.listTools();
           setMcpTools(tools);
           setMcpStatus('connected');

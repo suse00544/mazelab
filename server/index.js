@@ -334,96 +334,84 @@ app.post('/api/jina/search', async (req, res) => {
     }
 });
 
-// --- MCP PROXY ENDPOINTS ---
-// SSE proxy for MCP connections (bypasses CORS)
-app.get('/api/mcp/proxy', async (req, res) => {
-    const targetUrl = req.query.url;
-    if (!targetUrl) {
-        return res.status(400).json({ error: 'URL required' });
-    }
-
-    console.log(`[MCP Proxy] SSE connection to: ${targetUrl}`);
-
-    try {
-        const response = await fetch(targetUrl, {
-            method: 'GET',
-            headers: {
-                'Accept': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'ngrok-skip-browser-warning': 'true'
-            }
-        });
-
-        if (!response.ok) {
-            const errText = await response.text().catch(() => 'Unknown error');
-            console.error(`[MCP Proxy] HTTP Error: ${response.status}`);
-            return res.status(response.status).json({ error: errText });
-        }
-
-        // Set SSE headers
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.setHeader('X-Accel-Buffering', 'no');
-        res.flushHeaders();
-
-        // Stream the response
-        response.body.on('data', (chunk) => {
-            res.write(chunk);
-        });
-
-        response.body.on('end', () => {
-            console.log('[MCP Proxy] Stream ended');
-            res.end();
-        });
-
-        response.body.on('error', (err) => {
-            console.error('[MCP Proxy] Stream error:', err.message);
-            res.end();
-        });
-
-        req.on('close', () => {
-            console.log('[MCP Proxy] Client disconnected');
-            response.body.destroy();
-        });
-
-    } catch (e) {
-        console.error('[MCP Proxy] Connection error:', e.message);
-        res.status(500).json({ error: e.message });
-    }
-});
+// --- MCP PROXY ENDPOINTS (Streamable HTTP Transport 2025-03-26) ---
 
 // POST proxy for MCP JSON-RPC requests
 app.post('/api/mcp/proxy', async (req, res) => {
-    const targetUrl = req.query.url;
+    const { targetUrl, sessionId, payload } = req.body;
+    
     if (!targetUrl) {
-        return res.status(400).json({ error: 'URL required' });
+        return res.status(400).json({ error: 'targetUrl required' });
     }
 
-    console.log(`[MCP Proxy] POST to: ${targetUrl}`);
+    console.log(`[MCP Proxy] POST to: ${targetUrl}, method: ${payload?.method}`);
 
     try {
-        const response = await fetch(targetUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
-            body: JSON.stringify(req.body)
-        });
-
-        const text = await response.text();
+        const headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/event-stream',
+            'ngrok-skip-browser-warning': 'true'
+        };
         
-        if (!response.ok) {
-            console.error(`[MCP Proxy] POST Error: ${response.status}`);
-            return res.status(response.status).send(text);
+        if (sessionId) {
+            headers['Mcp-Session-Id'] = sessionId;
         }
 
-        res.setHeader('Content-Type', 'application/json');
-        res.send(text);
+        const response = await fetch(targetUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload)
+        });
+
+        // Forward session ID header if present
+        const mcpSessionId = response.headers.get('mcp-session-id');
+        if (mcpSessionId) {
+            res.setHeader('Mcp-Session-Id', mcpSessionId);
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        
+        if (!response.ok) {
+            const errText = await response.text().catch(() => 'Unknown error');
+            console.error(`[MCP Proxy] Error ${response.status}: ${errText}`);
+            return res.status(response.status).send(errText);
+        }
+
+        if (contentType.includes('text/event-stream')) {
+            // Stream SSE response
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders();
+
+            response.body.on('data', (chunk) => res.write(chunk));
+            response.body.on('end', () => res.end());
+            response.body.on('error', (err) => {
+                console.error('[MCP Proxy] Stream error:', err.message);
+                res.end();
+            });
+            req.on('close', () => response.body.destroy());
+        } else {
+            // JSON response
+            const text = await response.text();
+            res.setHeader('Content-Type', 'application/json');
+            
+            // Include session ID in response body if available
+            if (mcpSessionId) {
+                try {
+                    const json = JSON.parse(text);
+                    json.sessionId = mcpSessionId;
+                    res.send(JSON.stringify(json));
+                } catch (e) {
+                    res.send(text);
+                }
+            } else {
+                res.send(text);
+            }
+        }
 
     } catch (e) {
-        console.error('[MCP Proxy] POST error:', e.message);
+        console.error('[MCP Proxy] Error:', e.message);
         res.status(500).json({ error: e.message });
     }
 });
