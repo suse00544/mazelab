@@ -648,9 +648,9 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                           <div className="space-y-3">
                               <div className="text-sm text-slate-500 mb-2">找到 {xhsSearchResults.length} 条结果</div>
                               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
-                                  {xhsSearchResults.map((note) => (
+                                  {xhsSearchResults.map((note, idx) => (
                                       <div 
-                                          key={note.id} 
+                                          key={`${note.id}-${idx}`} 
                                           className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden hover:border-red-300 transition-colors cursor-pointer"
                                           onClick={() => handleXhsGetDetail(note)}
                                       >
@@ -1360,7 +1360,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
           </div>
       )}
 
-      {activeTab !== 'jina' && activeTab !== 'mcp' && !isEditing && (
+      {activeTab !== 'jina' && activeTab !== 'mcp' && activeTab !== 'xhs' && !isEditing && (
           <div className="flex-1 overflow-y-auto min-h-0 bg-white rounded-lg border border-slate-200">
               <table className="hidden md:table w-full text-left border-collapse">
                   <thead className="bg-slate-50 sticky top-0 z-10"><tr><th className="p-3">标题</th><th className="p-3">分类</th><th className="p-3">操作</th></tr></thead>
