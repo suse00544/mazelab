@@ -53,7 +53,7 @@ export async function checkXHSCrawlerHealth(): Promise<{ status: string; browser
 }
 
 export async function setXHSCookies(cookies: string): Promise<{ success: boolean; cookies_count: number }> {
-  const res = await fetch('/api/xhs/set-cookie', {
+  const res = await fetch('/api/xhs/set-cookies', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cookies })
@@ -88,7 +88,7 @@ export async function getXHSNoteDetail(
   xsec_token: string = '',
   xsec_source: string = ''
 ): Promise<{ success: boolean; note?: XHSNoteDetail; error?: string }> {
-  const res = await fetch('/api/xhs/note-detail', {
+  const res = await fetch('/api/xhs/note/detail', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note_id, xsec_token, xsec_source })
@@ -103,7 +103,7 @@ export async function getXHSNoteDetail(
 export async function getXHSNoteFromUrl(
   url: string
 ): Promise<{ success: boolean; note?: XHSNoteDetail; error?: string }> {
-  const res = await fetch('/api/xhs/note-from-url', {
+  const res = await fetch('/api/xhs/note/from-url', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url })
