@@ -37,15 +37,14 @@ export const MarkdownRenderer: React.FC<Props> = ({ content }) => {
           const imgMatch = part.match(/^!\[(.*?)\]\((.*?)\)$/);
           if (imgMatch) {
               const [, alt, src] = imgMatch;
-              // Handle local /uploads/ paths - use backend server
-              const imgSrc = src.startsWith('/uploads/') ? `http://localhost:3001${src}` : src;
               return (
                 <img 
                   key={i} 
-                  src={imgSrc} 
+                  src={src} 
                   alt={alt} 
                   className="max-w-full h-auto rounded-lg my-4 shadow-sm"
                   onError={(e) => {
+                    console.error('[Image] Failed to load:', src);
                     (e.target as HTMLImageElement).style.display = 'none';
                   }}
                 />
