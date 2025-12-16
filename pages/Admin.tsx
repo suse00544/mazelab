@@ -4,6 +4,7 @@ import { db } from '../services/db';
 import { Article, User } from '../types';
 import { MCPClient, MCPTool, MCPLog } from '../services/mcpService';
 import { fetchJinaReader, searchJina, JinaSearchResult } from '../services/jinaService';
+import { checkXHSCrawlerHealth, setXHSCookies, searchXHSNotes, getXHSNoteDetail, XHSNote, XHSNoteDetail } from '../services/xhsService';
 
 interface Props {
     user: User;
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
-  const [activeTab, setActiveTab] = useState<'public' | 'my-seed' | 'trash' | 'mcp' | 'jina'>('my-seed');
+  const [activeTab, setActiveTab] = useState<'public' | 'my-seed' | 'trash' | 'mcp' | 'jina' | 'xhs'>('my-seed');
   const [publicArticles, setPublicArticles] = useState<Article[]>([]);
   const [recycledArticles, setRecycledArticles] = useState<Article[]>([]);
   const [mySeedIds, setMySeedIds] = useState<string[]>([]);
@@ -66,6 +67,20 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   }>>([]);
   const [isSavingMcpItem, setIsSavingMcpItem] = useState<number | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const [xhsCookies, setXhsCookies] = useState(() => localStorage.getItem('XHS_COOKIES') || '');
+  const [xhsStatus, setXhsStatus] = useState<'unknown' | 'ready' | 'error'>('unknown');
+  const [xhsError, setXhsError] = useState('');
+  const [xhsSearchQuery, setXhsSearchQuery] = useState('');
+  const [xhsSearchResults, setXhsSearchResults] = useState<XHSNote[]>([]);
+  const [xhsSearchPage, setXhsSearchPage] = useState(1);
+  const [xhsHasMore, setXhsHasMore] = useState(false);
+  const [isXhsSearching, setIsXhsSearching] = useState(false);
+  const [isXhsLoadingMore, setIsXhsLoadingMore] = useState(false);
+  const [xhsNoteDetail, setXhsNoteDetail] = useState<XHSNoteDetail | null>(null);
+  const [isXhsLoadingDetail, setIsXhsLoadingDetail] = useState(false);
+  const [isSavingXhsNote, setIsSavingXhsNote] = useState(false);
+  const [xhsSort, setXhsSort] = useState<'general' | 'popular' | 'latest'>('general');
 
   // 从 MCP 结果中解析 title、desc、nickname、avatar、imageList 字段
   const parseMcpResult = (result: any): Array<{title: string; desc: string; nickname: string; avatar: string; imageList: string[]}> => {
@@ -209,6 +224,18 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       if (jinaApiKey) localStorage.setItem('JINA_API_KEY', jinaApiKey);
   }, [jinaApiKey]);
 
+  useEffect(() => {
+      if (xhsCookies) localStorage.setItem('XHS_COOKIES', xhsCookies);
+  }, [xhsCookies]);
+
+  useEffect(() => {
+      if (activeTab === 'xhs') {
+          checkXHSCrawlerHealth()
+              .then(() => setXhsStatus('ready'))
+              .catch(() => setXhsStatus('error'));
+      }
+  }, [activeTab]);
+
   const loadData = async () => {
       const [pub, rec, seeds, cats] = await Promise.all([
           db.getPublicArticles(),
@@ -297,6 +324,104 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
           setJinaError(e.message || 'Failed to fetch content');
       } finally {
           setIsJinaLoading(false);
+      }
+  };
+
+  const handleXhsSetCookies = async () => {
+      if (!xhsCookies.trim()) return;
+      setXhsError('');
+      try {
+          await setXHSCookies(xhsCookies.trim());
+          setXhsStatus('ready');
+          alert('Cookie 设置成功！');
+      } catch (e: any) {
+          setXhsError(e.message || 'Failed to set cookies');
+          setXhsStatus('error');
+      }
+  };
+
+  const handleXhsSearch = async (loadMore = false) => {
+      if (!xhsSearchQuery.trim()) return;
+      if (loadMore) {
+          setIsXhsLoadingMore(true);
+      } else {
+          setIsXhsSearching(true);
+          setXhsSearchResults([]);
+          setXhsSearchPage(1);
+          setXhsNoteDetail(null);
+      }
+      setXhsError('');
+      const currentPage = loadMore ? xhsSearchPage + 1 : 1;
+      try {
+          const result = await searchXHSNotes(xhsSearchQuery.trim(), currentPage, 20, xhsSort);
+          if (loadMore) {
+              setXhsSearchResults(prev => [...prev, ...result.notes]);
+              setXhsSearchPage(currentPage);
+          } else {
+              setXhsSearchResults(result.notes);
+          }
+          setXhsHasMore(result.has_more);
+      } catch (e: any) {
+          setXhsError(e.message || 'Search failed');
+      } finally {
+          setIsXhsSearching(false);
+          setIsXhsLoadingMore(false);
+      }
+  };
+
+  const handleXhsGetDetail = async (note: XHSNote) => {
+      setIsXhsLoadingDetail(true);
+      setXhsError('');
+      try {
+          const result = await getXHSNoteDetail(note.id, note.xsec_token);
+          if (result.success && result.note) {
+              setXhsNoteDetail(result.note);
+          } else {
+              setXhsError(result.error || 'Failed to get note detail');
+          }
+      } catch (e: any) {
+          setXhsError(e.message || 'Failed to get note detail');
+      } finally {
+          setIsXhsLoadingDetail(false);
+      }
+  };
+
+  const handleSaveXhsNote = async () => {
+      if (!xhsNoteDetail) return;
+      setIsSavingXhsNote(true);
+      try {
+          const downloadedImages: string[] = [];
+          for (const imgUrl of xhsNoteDetail.images) {
+              const downloaded = await downloadImage(imgUrl);
+              downloadedImages.push(downloaded || imgUrl);
+          }
+          const authorInfo = xhsNoteDetail.user.nickname ? `> 作者: ${xhsNoteDetail.user.nickname}\n\n` : '';
+          const tagsInfo = xhsNoteDetail.tag_list.length > 0 ? `标签: ${xhsNoteDetail.tag_list.join(', ')}\n\n` : '';
+          const statsInfo = `点赞: ${xhsNoteDetail.liked_count} | 收藏: ${xhsNoteDetail.collected_count} | 评论: ${xhsNoteDetail.comment_count}\n\n`;
+          const imagesMarkdown = downloadedImages.length > 0 ? downloadedImages.map(url => `![图片](${url})`).join('\n\n') + '\n\n' : '';
+          const fullContent = authorInfo + tagsInfo + statsInfo + xhsNoteDetail.desc + '\n\n' + imagesMarkdown;
+          const newArticle: Article = {
+              id: `xhs-${Date.now()}`,
+              title: xhsNoteDetail.title || '小红书笔记',
+              content: fullContent,
+              summary: xhsNoteDetail.desc.substring(0, 100) + '...',
+              category: '小红书导入',
+              tags: xhsNoteDetail.tag_list,
+              tone: 'Professional',
+              estimatedReadTime: Math.ceil(xhsNoteDetail.desc.length / 500 * 60),
+              created_at: Date.now(),
+              isPublic: true,
+              ownerId: user.id,
+              imageUrl: downloadedImages[0] || undefined
+          };
+          await db.saveArticle(newArticle);
+          await loadData();
+          alert('保存成功！已添加到公共库。');
+          setXhsNoteDetail(null);
+      } catch (e: any) {
+          alert('保存失败: ' + e.message);
+      } finally {
+          setIsSavingXhsNote(false);
       }
   };
 
@@ -449,10 +574,191 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
             <button onClick={() => setActiveTab('my-seed')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'my-seed' ? 'bg-white shadow text-indigo-700' : 'text-slate-600'}`}>我的配置 ({mySeedIds.length})</button>
             <button onClick={() => setActiveTab('public')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'public' ? 'bg-white shadow text-indigo-700' : 'text-slate-600'}`}>公共库 ({publicArticles.length})</button>
             <button onClick={() => setActiveTab('trash')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'trash' ? 'bg-white shadow text-red-700' : 'text-slate-600'}`}>回收站 ({recycledArticles.length})</button>
+            <button onClick={() => setActiveTab('xhs')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'xhs' ? 'bg-white shadow text-red-600' : 'text-slate-600'}`}>📕 小红书</button>
             <button onClick={() => setActiveTab('mcp')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'mcp' ? 'bg-white shadow text-emerald-700' : 'text-slate-600'}`}>🔌 MCP</button>
             <button onClick={() => setActiveTab('jina')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'jina' ? 'bg-white shadow text-pink-700' : 'text-slate-600'}`}>🌏 Jina</button>
         </div>
       </div>
+
+      {activeTab === 'xhs' && (
+          <div className="flex-1 overflow-y-auto flex flex-col gap-6 max-w-3xl mx-auto w-full pb-8">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <span>📕</span> 小红书爬虫
+                      <span className={`ml-auto px-2 py-1 rounded text-xs font-medium ${
+                          xhsStatus === 'ready' ? 'bg-green-100 text-green-700' :
+                          xhsStatus === 'error' ? 'bg-red-100 text-red-700' :
+                          'bg-slate-100 text-slate-600'
+                      }`}>
+                          {xhsStatus === 'ready' ? '✓ 服务就绪' : xhsStatus === 'error' ? '✗ 服务不可用' : '○ 检查中...'}
+                      </span>
+                  </h3>
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">小红书 Cookie</label>
+                          <textarea 
+                              className="w-full bg-slate-50 border border-slate-300 rounded px-3 py-2 font-mono text-xs h-20" 
+                              placeholder="从浏览器复制小红书的 Cookie，包含 a1 等字段" 
+                              value={xhsCookies} 
+                              onChange={e => setXhsCookies(e.target.value)}
+                          />
+                          <p className="text-xs text-slate-500 mt-1">提示：在浏览器登录小红书后，打开开发者工具 -&gt; 网络 -&gt; 复制请求头中的 Cookie</p>
+                      </div>
+                      {xhsError && <div className="bg-red-50 text-red-700 p-3 rounded text-sm">{xhsError}</div>}
+                      <button 
+                          onClick={handleXhsSetCookies}
+                          disabled={!xhsCookies.trim() || xhsStatus !== 'ready'}
+                          className="w-full bg-red-500 text-white font-bold py-2 rounded-lg shadow-sm disabled:opacity-50 hover:bg-red-600"
+                      >
+                          设置 Cookie
+                      </button>
+                  </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><span>🔍</span> 搜索小红书笔记</h3>
+                  <div className="space-y-4">
+                      <div className="flex gap-2">
+                          <input 
+                              className="flex-1 bg-slate-50 border border-slate-300 rounded px-3 py-3 text-sm" 
+                              placeholder="搜索关键词，例如：美食攻略" 
+                              value={xhsSearchQuery} 
+                              onChange={e => setXhsSearchQuery(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleXhsSearch()}
+                          />
+                          <select
+                              className="bg-slate-50 border border-slate-300 rounded px-3 py-2 text-sm"
+                              value={xhsSort}
+                              onChange={e => setXhsSort(e.target.value as any)}
+                          >
+                              <option value="general">综合</option>
+                              <option value="popular">最热</option>
+                              <option value="latest">最新</option>
+                          </select>
+                          <button 
+                              onClick={() => handleXhsSearch(false)} 
+                              disabled={isXhsSearching || !xhsSearchQuery.trim() || xhsStatus !== 'ready'} 
+                              className="px-6 bg-red-500 text-white font-bold rounded-lg shadow-sm disabled:opacity-50 hover:bg-red-600"
+                          >
+                              {isXhsSearching ? '搜索中...' : '搜索'}
+                          </button>
+                      </div>
+
+                      {xhsSearchResults.length > 0 && (
+                          <div className="space-y-3">
+                              <div className="text-sm text-slate-500 mb-2">找到 {xhsSearchResults.length} 条结果</div>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
+                                  {xhsSearchResults.map((note) => (
+                                      <div 
+                                          key={note.id} 
+                                          className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden hover:border-red-300 transition-colors cursor-pointer"
+                                          onClick={() => handleXhsGetDetail(note)}
+                                      >
+                                          {note.cover && (
+                                              <img 
+                                                  src={`/api/image-proxy?url=${encodeURIComponent(note.cover)}`}
+                                                  alt={note.title}
+                                                  className="w-full h-32 object-cover"
+                                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                              />
+                                          )}
+                                          <div className="p-2">
+                                              <div className="font-medium text-slate-800 text-sm line-clamp-2">{note.title || note.desc.substring(0, 30)}</div>
+                                              <div className="flex items-center gap-1 mt-1">
+                                                  <span className="text-xs text-slate-500">{note.user.nickname}</span>
+                                                  <span className="text-xs text-red-500 ml-auto">❤ {note.liked_count}</span>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                              {xhsHasMore && (
+                                  <button 
+                                      onClick={() => handleXhsSearch(true)}
+                                      disabled={isXhsLoadingMore}
+                                      className="w-full py-2 text-sm text-red-600 border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                                  >
+                                      {isXhsLoadingMore ? '加载中...' : '加载更多'}
+                                  </button>
+                              )}
+                          </div>
+                      )}
+                  </div>
+              </div>
+
+              {isXhsLoadingDetail && (
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 text-center">
+                      <div className="animate-pulse text-slate-500">加载笔记详情中...</div>
+                  </div>
+              )}
+
+              {xhsNoteDetail && (
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                      <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                          <span>📝</span> 笔记详情
+                          <button 
+                              onClick={() => setXhsNoteDetail(null)}
+                              className="ml-auto text-xs px-2 py-1 text-slate-500 hover:text-slate-700"
+                          >
+                              ✕ 关闭
+                          </button>
+                      </h3>
+                      <div className="space-y-4">
+                          <div className="flex items-center gap-3">
+                              {xhsNoteDetail.user.avatar ? (
+                                  <img 
+                                      src={`/api/image-proxy?url=${encodeURIComponent(xhsNoteDetail.user.avatar)}`} 
+                                      alt={xhsNoteDetail.user.nickname} 
+                                      className="w-10 h-10 rounded-full object-cover"
+                                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                              ) : (
+                                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 font-bold">
+                                      {(xhsNoteDetail.user.nickname || '?')[0]}
+                                  </div>
+                              )}
+                              <div>
+                                  <div className="font-medium text-slate-800">{xhsNoteDetail.user.nickname || '未知用户'}</div>
+                                  <div className="text-xs text-slate-400">作者</div>
+                              </div>
+                          </div>
+                          <h4 className="text-xl font-bold text-slate-800">{xhsNoteDetail.title || '无标题'}</h4>
+                          {xhsNoteDetail.images.length > 0 && (
+                              <div className="grid grid-cols-3 gap-2">
+                                  {xhsNoteDetail.images.map((img, idx) => (
+                                      <img 
+                                          key={idx}
+                                          src={`/api/image-proxy?url=${encodeURIComponent(img)}`}
+                                          alt={`图片 ${idx + 1}`}
+                                          className="w-full h-24 object-cover rounded-lg"
+                                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                      />
+                                  ))}
+                              </div>
+                          )}
+                          <div className="text-slate-700 whitespace-pre-wrap">{xhsNoteDetail.desc}</div>
+                          <div className="flex flex-wrap gap-2">
+                              {xhsNoteDetail.tag_list.map((tag, idx) => (
+                                  <span key={idx} className="px-2 py-1 bg-red-50 text-red-600 text-xs rounded-full">#{tag}</span>
+                              ))}
+                          </div>
+                          <div className="flex gap-4 text-sm text-slate-500">
+                              <span>❤ {xhsNoteDetail.liked_count}</span>
+                              <span>⭐ {xhsNoteDetail.collected_count}</span>
+                              <span>💬 {xhsNoteDetail.comment_count}</span>
+                          </div>
+                          <button 
+                              onClick={handleSaveXhsNote}
+                              disabled={isSavingXhsNote}
+                              className="w-full bg-red-500 text-white font-bold py-3 rounded-lg shadow-sm disabled:opacity-50 hover:bg-red-600"
+                          >
+                              {isSavingXhsNote ? '保存中...' : '💾 保存到内容库'}
+                          </button>
+                      </div>
+                  </div>
+              )}
+          </div>
+      )}
 
       {activeTab === 'jina' && (
           <div className="flex-1 overflow-y-auto flex flex-col gap-6 max-w-2xl mx-auto w-full">

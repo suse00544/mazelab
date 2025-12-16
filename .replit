@@ -1,7 +1,7 @@
 modules = ["nodejs-20", "python-3.11"]
 [nix]
 channel = "stable-25_05"
-packages = ["gitFull", "playwright-driver", "unzip"]
+packages = ["gitFull", "playwright-driver", "unzip", "nspr", "nss", "at-spi2-atk", "cups", "libdrm", "libxkbcommon", "mesa", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "pango", "cairo", "alsa-lib", "dbus", "expat", "glib", "libgbm", "gtk3", "xorg.libxshmfence"]
 
 [agent]
 expertMode = true
@@ -21,6 +21,10 @@ args = "Backend Server"
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "Frontend"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "XHS Crawler"
 
 [[workflows.workflow]]
 name = "Backend Server"
@@ -46,6 +50,18 @@ waitForPort = 5000
 [workflows.workflow.metadata]
 outputType = "webview"
 
+[[workflows.workflow]]
+name = "XHS Crawler"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd crawler && python main.py"
+waitForPort = 8000
+
 [[ports]]
 localPort = 3001
 externalPort = 3001
@@ -57,6 +73,10 @@ externalPort = 80
 [[ports]]
 localPort = 5001
 externalPort = 3002
+
+[[ports]]
+localPort = 8000
+externalPort = 8000
 
 [userenv]
 

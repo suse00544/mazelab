@@ -520,6 +520,95 @@ app.post('/api/image-download', async (req, res) => {
     }
 });
 
+// --- XHS CRAWLER PROXY ENDPOINTS ---
+const CRAWLER_URL = 'http://localhost:8000';
+
+// XHS Crawler health check
+app.get('/api/xhs/health', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/health`);
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: 'Crawler service not available', detail: e.message });
+    }
+});
+
+// Set XHS cookies
+app.post('/api/xhs/set-cookies', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/set-cookies`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS search notes
+app.post('/api/xhs/search', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS get note detail
+app.post('/api/xhs/note/detail', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/note/detail`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS get note from URL
+app.post('/api/xhs/note/from-url', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/note/from-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS get comments
+app.post('/api/xhs/comments', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
