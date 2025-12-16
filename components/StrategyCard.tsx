@@ -41,8 +41,8 @@ export const StrategyCard: React.FC<Props> = ({ strategy, roundIndex }) => {
 
                 {/* 2. Charts & Strategy */}
                 <div className="grid md:grid-cols-2 gap-6 items-center">
-                    <div className="h-32 w-full">
-                         <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-32 w-full min-w-[200px] min-h-[128px]">
+                         <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={100}>
                             <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
                                 <XAxis type="number" domain={[0, 100]} hide />
                                 <YAxis dataKey="name" type="category" width={50} tick={{fontSize: 10, fontWeight: 600, fill: '#64748b'}} />
