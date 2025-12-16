@@ -151,8 +151,8 @@ export const OnboardingWizard: React.FC<Props> = ({ userId, onComplete, onSkip }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg">
+    <div className="fixed inset-0 bg-gradient-to-br from-indigo-50 via-white to-pink-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="w-full max-w-lg my-auto">
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
           <div className="h-2 bg-gray-100">
             <div 
@@ -161,7 +161,7 @@ export const OnboardingWizard: React.FC<Props> = ({ userId, onComplete, onSkip }
             />
           </div>
 
-          <div className="p-6 md:p-8">
+          <div className="p-6 md:p-8 max-h-[80vh] overflow-y-auto">
             <div className="text-center mb-2">
               <span className="text-sm text-gray-400">
                 {currentIndex + 1} / {questions.length}
