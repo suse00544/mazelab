@@ -80,9 +80,19 @@ async def call_mnsv2(page: Page, sign_str: str, md5_str: str) -> str:
     sign_str_escaped = sign_str.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
     md5_str_escaped = md5_str.replace("\\", "\\\\").replace("'", "\\'")
     try:
+        has_mnsv2 = await page.evaluate("() => typeof window.mnsv2 === 'function'")
+        if not has_mnsv2:
+            print("[Sign] window.mnsv2 not found, trying to load...")
+            await page.goto("https://www.xiaohongshu.com/explore", wait_until="networkidle", timeout=30000)
+            has_mnsv2 = await page.evaluate("() => typeof window.mnsv2 === 'function'")
+            print(f"[Sign] After reload, mnsv2 available: {has_mnsv2}")
+        
         result = await page.evaluate(f"window.mnsv2('{sign_str_escaped}', '{md5_str_escaped}')")
+        if not result:
+            print(f"[Sign] mnsv2 returned empty for md5={md5_str[:16]}...")
         return result if result else ""
-    except Exception:
+    except Exception as e:
+        print(f"[Sign] Error calling mnsv2: {e}")
         return ""
 
 async def sign_xs_with_playwright(
