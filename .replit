@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "python-3.11"]
+modules = ["nodejs-20", "python-3.11", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 packages = ["gitFull", "playwright-driver", "unzip", "nspr", "nss", "at-spi2-atk", "cups", "libdrm", "libxkbcommon", "mesa", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "pango", "cairo", "alsa-lib", "dbus", "expat", "glib", "libgbm", "gtk3", "xorg.libxshmfence"]
