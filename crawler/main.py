@@ -94,7 +94,7 @@ async def health():
 
 @app.post("/set-cookies")
 async def set_cookies(req: CookieRequest):
-    global browser_context, xhs_client
+    global browser_context, xhs_client, page
     if not browser_context:
         raise HTTPException(status_code=500, detail="Browser not initialized")
     
@@ -118,10 +118,11 @@ async def set_cookies(req: CookieRequest):
             xhs_client.cookie_dict = cookie_dict
             xhs_client.headers["Cookie"] = req.cookies
         
-        await page.reload(wait_until="networkidle", timeout=30000)
+        print(f"[Crawler] Cookies set: {len(cookies)} items, a1={cookie_dict.get('a1', 'N/A')[:20]}...")
         
         return {"success": True, "cookies_count": len(cookies)}
     except Exception as e:
+        print(f"[Crawler] Error setting cookies: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/search")
@@ -138,6 +139,9 @@ async def search_notes(req: SearchRequest):
         }
         sort_type = sort_map.get(req.sort, SearchSortType.GENERAL)
         
+        print(f"[Crawler] Searching: keyword={req.keyword}, page={req.page}, sort={req.sort}")
+        print(f"[Crawler] Cookie a1: {xhs_client.cookie_dict.get('a1', 'N/A')[:20] if xhs_client.cookie_dict.get('a1') else 'N/A'}...")
+        
         result = await xhs_client.get_note_by_keyword(
             keyword=req.keyword,
             page=req.page,
@@ -145,7 +149,11 @@ async def search_notes(req: SearchRequest):
             sort=sort_type,
         )
         
+        print(f"[Crawler] Search result keys: {result.keys() if isinstance(result, dict) else type(result)}")
+        
         items = result.get("items", [])
+        print(f"[Crawler] Found {len(items)} items")
+        
         notes = []
         for item in items:
             note = item.get("note_card", {})
@@ -171,6 +179,7 @@ async def search_notes(req: SearchRequest):
             "notes": notes
         }
     except Exception as e:
+        print(f"[Crawler] Search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/note/detail")
