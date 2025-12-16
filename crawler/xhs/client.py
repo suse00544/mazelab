@@ -59,6 +59,8 @@ class XiaoHongShuClient:
         async with httpx.AsyncClient() as client:
             response = await client.request(method, url, timeout=self.timeout, **kwargs)
 
+        print(f"[Client] {method} {url} -> {response.status_code}")
+        
         if response.status_code == 471 or response.status_code == 461:
             verify_type = response.headers.get("Verifytype", "")
             verify_uuid = response.headers.get("Verifyuuid", "")
@@ -67,13 +69,21 @@ class XiaoHongShuClient:
 
         if return_response:
             return response.text
-        data: Dict = response.json()
+        
+        try:
+            data: Dict = response.json()
+        except Exception as e:
+            print(f"[Client] Failed to parse JSON: {response.text[:500]}")
+            raise Exception(f"Invalid JSON response: {e}")
+            
+        print(f"[Client] Response success={data.get('success')}, code={data.get('code')}, msg={data.get('msg', '')[:50]}")
+        
         if data.get("success"):
             return data.get("data", data.get("success", {}))
         elif data.get("code") == self.IP_ERROR_CODE:
             raise Exception("IP blocked")
         else:
-            err_msg = data.get("msg", None) or f"{response.text}"
+            err_msg = data.get("msg", None) or f"{response.text[:200]}"
             raise Exception(err_msg)
 
     async def get(self, uri: str, params: Optional[Dict] = None) -> Dict:
