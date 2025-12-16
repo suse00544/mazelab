@@ -63,16 +63,25 @@ async def close_browser():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global page, xhs_client
+    global page, xhs_client, browser_context
     page = await init_browser()
+    
+    # Extract cookies from browser context after page load
+    cookies = await browser_context.cookies()
+    cookie_dict = {c["name"]: c["value"] for c in cookies}
+    cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
+    
+    print(f"[Crawler] Extracted {len(cookies)} cookies, a1={cookie_dict.get('a1', 'N/A')[:20] if cookie_dict.get('a1') else 'N/A'}...")
+    
     xhs_client = XiaoHongShuClient(
         headers={
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Origin": "https://www.xiaohongshu.com",
             "Referer": "https://www.xiaohongshu.com/",
+            "Cookie": cookie_str,
         },
         playwright_page=page,
-        cookie_dict={},
+        cookie_dict=cookie_dict,
     )
     print("[Crawler] XHS Client initialized")
     yield
