@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { db } from '../services/db';
-import { Article, User } from '../types';
+import { Article, User, OnboardingQuestion } from '../types';
 import { MCPClient, MCPTool, MCPLog } from '../services/mcpService';
 import { fetchJinaReader, searchJina, JinaSearchResult } from '../services/jinaService';
 import { checkXHSCrawlerHealth, setXHSCookies, searchXHSNotes, getXHSNoteDetail, XHSNote, XHSNoteDetail } from '../services/xhsService';
@@ -11,8 +11,12 @@ interface Props {
     onStartExperiment?: () => void;
 }
 
+interface EditableQuestion extends OnboardingQuestion {
+  active: boolean;
+}
+
 export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
-  const [activeTab, setActiveTab] = useState<'public' | 'trash' | 'mcp' | 'jina' | 'xhs'>('public');
+  const [activeTab, setActiveTab] = useState<'public' | 'trash' | 'mcp' | 'jina' | 'xhs' | 'questionnaire'>('public');
   const [publicArticles, setPublicArticles] = useState<Article[]>([]);
   const [recycledArticles, setRecycledArticles] = useState<Article[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
@@ -80,6 +84,21 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const [isXhsLoadingDetail, setIsXhsLoadingDetail] = useState(false);
   const [isSavingXhsNote, setIsSavingXhsNote] = useState(false);
   const [xhsSort, setXhsSort] = useState<'general' | 'popular' | 'latest'>('general');
+
+  const [questions, setQuestions] = useState<EditableQuestion[]>([]);
+  const [editingQuestion, setEditingQuestion] = useState<EditableQuestion | null>(null);
+  const [isAddingQuestion, setIsAddingQuestion] = useState(false);
+  const [questionForm, setQuestionForm] = useState({
+    id: '',
+    question: '',
+    type: 'single' as 'single' | 'multiple' | 'text' | 'scale',
+    options: [] as string[],
+    required: true,
+    order: 1,
+    category: 'interest',
+    active: true,
+    optionInput: ''
+  });
 
   // 从 MCP 结果中解析 title、desc、nickname、avatar、imageList 字段
   const parseMcpResult = (result: any): Array<{title: string; desc: string; nickname: string; avatar: string; imageList: string[]}> => {
@@ -240,7 +259,120 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
               .then(() => setXhsStatus('ready'))
               .catch(() => setXhsStatus('error'));
       }
+      if (activeTab === 'questionnaire') {
+          loadQuestions();
+      }
   }, [activeTab]);
+
+  const loadQuestions = async () => {
+      try {
+          const res = await fetch('/api/admin/onboarding/questions');
+          const data = await res.json();
+          setQuestions(data);
+      } catch (e) {
+          console.error('Failed to load questions:', e);
+      }
+  };
+
+  const resetQuestionForm = () => {
+      setQuestionForm({
+          id: '',
+          question: '',
+          type: 'single',
+          options: [],
+          required: true,
+          order: questions.length + 1,
+          category: 'interest',
+          active: true,
+          optionInput: ''
+      });
+  };
+
+  const handleSaveQuestion = async () => {
+      if (!questionForm.question.trim()) {
+          alert('请填写问题内容');
+          return;
+      }
+      if ((questionForm.type === 'single' || questionForm.type === 'multiple') && questionForm.options.length === 0) {
+          alert('请添加至少一个选项');
+          return;
+      }
+      try {
+          const questionData = {
+              id: questionForm.id || `q-${Date.now()}`,
+              question: questionForm.question,
+              type: questionForm.type,
+              options: questionForm.options,
+              required: questionForm.required,
+              order: questionForm.order,
+              category: questionForm.category,
+              active: questionForm.active
+          };
+          if (editingQuestion) {
+              await fetch(`/api/admin/onboarding/questions/${editingQuestion.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(questionData)
+              });
+          } else {
+              await fetch('/api/admin/onboarding/questions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(questionData)
+              });
+          }
+          await loadQuestions();
+          setIsAddingQuestion(false);
+          setEditingQuestion(null);
+          resetQuestionForm();
+          alert('保存成功！');
+      } catch (e: any) {
+          alert('保存失败: ' + e.message);
+      }
+  };
+
+  const handleEditQuestion = (q: EditableQuestion) => {
+      setEditingQuestion(q);
+      setQuestionForm({
+          id: q.id,
+          question: q.question,
+          type: q.type,
+          options: q.options || [],
+          required: q.required,
+          order: q.order,
+          category: q.category,
+          active: q.active,
+          optionInput: ''
+      });
+      setIsAddingQuestion(true);
+  };
+
+  const handleDeleteQuestion = async (id: string) => {
+      if (!confirm('确定要删除这个问题吗？')) return;
+      try {
+          await fetch(`/api/admin/onboarding/questions/${id}`, { method: 'DELETE' });
+          await loadQuestions();
+      } catch (e: any) {
+          alert('删除失败: ' + e.message);
+      }
+  };
+
+  const handleAddOption = () => {
+      if (questionForm.optionInput.trim()) {
+          setQuestionForm(prev => ({
+              ...prev,
+              options: [...prev.options, prev.optionInput.trim()],
+              optionInput: ''
+          }));
+      }
+  };
+
+  const handleRemoveOption = (idx: number) => {
+      setQuestionForm(prev => ({
+          ...prev,
+          options: prev.options.filter((_, i) => i !== idx)
+      }));
+  };
 
   const loadData = async () => {
       const [pub, rec, cats] = await Promise.all([
@@ -575,11 +707,202 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
         <div className="flex bg-slate-200 p-1 rounded-lg overflow-x-auto max-w-full w-full md:w-auto">
             <button onClick={() => setActiveTab('public')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'public' ? 'bg-white shadow text-indigo-700' : 'text-slate-600'}`}>公共库 ({publicArticles.length})</button>
             <button onClick={() => setActiveTab('trash')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'trash' ? 'bg-white shadow text-red-700' : 'text-slate-600'}`}>回收站 ({recycledArticles.length})</button>
+            <button onClick={() => setActiveTab('questionnaire')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'questionnaire' ? 'bg-white shadow text-purple-700' : 'text-slate-600'}`}>📝 问卷配置</button>
             <button onClick={() => setActiveTab('xhs')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'xhs' ? 'bg-white shadow text-red-600' : 'text-slate-600'}`}>📕 小红书</button>
             <button onClick={() => setActiveTab('mcp')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'mcp' ? 'bg-white shadow text-emerald-700' : 'text-slate-600'}`}>🔌 MCP</button>
             <button onClick={() => setActiveTab('jina')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'jina' ? 'bg-white shadow text-pink-700' : 'text-slate-600'}`}>🌏 Jina</button>
         </div>
       </div>
+
+      {activeTab === 'questionnaire' && (
+          <div className="flex-1 overflow-y-auto flex flex-col gap-6 max-w-3xl mx-auto w-full pb-8">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                  <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                          <span>📝</span> 冷启动问卷配置
+                      </h3>
+                      {!isAddingQuestion && (
+                          <button 
+                              onClick={() => { resetQuestionForm(); setIsAddingQuestion(true); setEditingQuestion(null); }}
+                              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
+                          >
+                              + 添加问题
+                          </button>
+                      )}
+                  </div>
+                  <p className="text-sm text-slate-500 mb-4">
+                      配置用户在开始实验前需要回答的问卷问题。支持单选题、多选题和简答题。
+                  </p>
+
+                  {isAddingQuestion && (
+                      <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-200">
+                          <h4 className="font-bold text-purple-800 mb-4">{editingQuestion ? '编辑问题' : '添加新问题'}</h4>
+                          <div className="space-y-4">
+                              <div>
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">问题内容 *</label>
+                                  <input 
+                                      className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                      placeholder="例如：您喜欢看哪类内容？"
+                                      value={questionForm.question}
+                                      onChange={e => setQuestionForm(prev => ({ ...prev, question: e.target.value }))}
+                                  />
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                      <label className="block text-sm font-medium text-slate-700 mb-1">问题类型</label>
+                                      <select 
+                                          className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                          value={questionForm.type}
+                                          onChange={e => setQuestionForm(prev => ({ ...prev, type: e.target.value as any }))}
+                                      >
+                                          <option value="single">单选题</option>
+                                          <option value="multiple">多选题</option>
+                                          <option value="text">简答题</option>
+                                      </select>
+                                  </div>
+                                  <div>
+                                      <label className="block text-sm font-medium text-slate-700 mb-1">分类</label>
+                                      <select 
+                                          className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                          value={questionForm.category}
+                                          onChange={e => setQuestionForm(prev => ({ ...prev, category: e.target.value }))}
+                                      >
+                                          <option value="basic">基础信息</option>
+                                          <option value="interest">兴趣偏好</option>
+                                          <option value="behavior">行为习惯</option>
+                                      </select>
+                                  </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                      <label className="block text-sm font-medium text-slate-700 mb-1">排序</label>
+                                      <input 
+                                          type="number"
+                                          className="w-full bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                          value={questionForm.order}
+                                          onChange={e => setQuestionForm(prev => ({ ...prev, order: parseInt(e.target.value) || 1 }))}
+                                      />
+                                  </div>
+                                  <div className="flex items-end gap-4">
+                                      <label className="flex items-center gap-2 text-sm">
+                                          <input 
+                                              type="checkbox"
+                                              checked={questionForm.required}
+                                              onChange={e => setQuestionForm(prev => ({ ...prev, required: e.target.checked }))}
+                                          />
+                                          必填
+                                      </label>
+                                      <label className="flex items-center gap-2 text-sm">
+                                          <input 
+                                              type="checkbox"
+                                              checked={questionForm.active}
+                                              onChange={e => setQuestionForm(prev => ({ ...prev, active: e.target.checked }))}
+                                          />
+                                          启用
+                                      </label>
+                                  </div>
+                              </div>
+                              {(questionForm.type === 'single' || questionForm.type === 'multiple') && (
+                                  <div>
+                                      <label className="block text-sm font-medium text-slate-700 mb-1">选项</label>
+                                      <div className="flex gap-2 mb-2">
+                                          <input 
+                                              className="flex-1 bg-white border border-slate-300 rounded px-3 py-2 text-sm"
+                                              placeholder="输入选项内容"
+                                              value={questionForm.optionInput}
+                                              onChange={e => setQuestionForm(prev => ({ ...prev, optionInput: e.target.value }))}
+                                              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddOption())}
+                                          />
+                                          <button 
+                                              onClick={handleAddOption}
+                                              className="px-4 py-2 bg-slate-200 text-slate-700 rounded text-sm hover:bg-slate-300"
+                                          >
+                                              添加
+                                          </button>
+                                      </div>
+                                      {questionForm.options.length > 0 && (
+                                          <div className="flex flex-wrap gap-2">
+                                              {questionForm.options.map((opt, idx) => (
+                                                  <span key={idx} className="px-3 py-1 bg-white border border-slate-300 rounded-full text-sm flex items-center gap-2">
+                                                      {opt}
+                                                      <button onClick={() => handleRemoveOption(idx)} className="text-red-500 hover:text-red-700">×</button>
+                                                  </span>
+                                              ))}
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
+                              <div className="flex gap-3 pt-2">
+                                  <button 
+                                      onClick={() => { setIsAddingQuestion(false); setEditingQuestion(null); resetQuestionForm(); }}
+                                      className="flex-1 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50"
+                                  >
+                                      取消
+                                  </button>
+                                  <button 
+                                      onClick={handleSaveQuestion}
+                                      className="flex-1 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700"
+                                  >
+                                      保存问题
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+                  )}
+
+                  <div className="space-y-3">
+                      {questions.length === 0 ? (
+                          <div className="text-center py-8 text-slate-400">
+                              暂无问卷问题，点击上方按钮添加
+                          </div>
+                      ) : (
+                          questions.map((q, idx) => (
+                              <div key={q.id} className={`p-4 rounded-lg border ${q.active ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
+                                  <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                              <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">#{q.order}</span>
+                                              <span className={`text-xs px-2 py-0.5 rounded ${
+                                                  q.type === 'single' ? 'bg-blue-100 text-blue-700' :
+                                                  q.type === 'multiple' ? 'bg-green-100 text-green-700' :
+                                                  'bg-orange-100 text-orange-700'
+                                              }`}>
+                                                  {q.type === 'single' ? '单选' : q.type === 'multiple' ? '多选' : '简答'}
+                                              </span>
+                                              {q.required && <span className="text-xs text-red-500">*必填</span>}
+                                              {!q.active && <span className="text-xs text-slate-400">（已禁用）</span>}
+                                          </div>
+                                          <div className="font-medium text-slate-800">{q.question}</div>
+                                          {q.options && q.options.length > 0 && (
+                                              <div className="flex flex-wrap gap-1 mt-2">
+                                                  {q.options.map((opt, i) => (
+                                                      <span key={i} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">{opt}</span>
+                                                  ))}
+                                              </div>
+                                          )}
+                                      </div>
+                                      <div className="flex gap-2 ml-4">
+                                          <button 
+                                              onClick={() => handleEditQuestion(q)}
+                                              className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded"
+                                          >
+                                              编辑
+                                          </button>
+                                          <button 
+                                              onClick={() => handleDeleteQuestion(q.id)}
+                                              className="text-xs px-2 py-1 text-red-600 hover:bg-red-50 rounded"
+                                          >
+                                              删除
+                                          </button>
+                                      </div>
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
 
       {activeTab === 'xhs' && (
           <div className="flex-1 overflow-y-auto flex flex-col gap-6 max-w-3xl mx-auto w-full pb-8">

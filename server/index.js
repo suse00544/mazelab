@@ -285,6 +285,63 @@ app.get('/api/onboarding/questions', async (req, res) => {
     }
 });
 
+app.get('/api/admin/onboarding/questions', async (req, res) => {
+    try {
+        const rows = await all('SELECT * FROM onboarding_questions ORDER BY sort_order ASC');
+        res.json(rows.map(r => ({
+            id: r.id,
+            question: r.question,
+            type: r.type,
+            options: r.options ? JSON.parse(r.options) : [],
+            required: !!r.required,
+            order: r.sort_order,
+            category: r.category,
+            active: !!r.active
+        })));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/onboarding/questions', async (req, res) => {
+    const q = req.body;
+    try {
+        await run(`INSERT OR REPLACE INTO onboarding_questions 
+            (id, question, type, options, min_val, max_val, required, sort_order, category, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [q.id, q.question, q.type, JSON.stringify(q.options || []), q.min || null, q.max || null, 
+             q.required ? 1 : 0, q.order, q.category, q.active !== false ? 1 : 0]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/admin/onboarding/questions/:id', async (req, res) => {
+    const q = req.body;
+    try {
+        await run(`UPDATE onboarding_questions SET 
+            question = ?, type = ?, options = ?, min_val = ?, max_val = ?, required = ?, sort_order = ?, category = ?, active = ?
+            WHERE id = ?`,
+            [q.question, q.type, JSON.stringify(q.options || []), q.min || null, q.max || null, 
+             q.required ? 1 : 0, q.order, q.category, q.active !== false ? 1 : 0, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/admin/onboarding/questions/:id', async (req, res) => {
+    try {
+        await run('DELETE FROM onboarding_questions WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/onboarding/questions', async (req, res) => {
     const q = req.body;
     try {
@@ -292,7 +349,22 @@ app.post('/api/onboarding/questions', async (req, res) => {
             (id, question, type, options, min_val, max_val, required, sort_order, category, active)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [q.id, q.question, q.type, JSON.stringify(q.options || []), q.min, q.max, 
-             q.required ? 1 : 0, q.order, q.category, 1]
+             q.required ? 1 : 0, q.order, q.category, q.active !== false ? 1 : 0]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/onboarding/questions/:id', async (req, res) => {
+    const q = req.body;
+    try {
+        await run(`UPDATE onboarding_questions SET 
+            question = ?, type = ?, options = ?, required = ?, sort_order = ?, category = ?, active = ?
+            WHERE id = ?`,
+            [q.question, q.type, JSON.stringify(q.options || []), q.required ? 1 : 0, 
+             q.order, q.category, q.active !== false ? 1 : 0, req.params.id]
         );
         res.json({ success: true });
     } catch (e) {
@@ -302,7 +374,7 @@ app.post('/api/onboarding/questions', async (req, res) => {
 
 app.delete('/api/onboarding/questions/:id', async (req, res) => {
     try {
-        await run('UPDATE onboarding_questions SET active = 0 WHERE id = ?', [req.params.id]);
+        await run('DELETE FROM onboarding_questions WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
