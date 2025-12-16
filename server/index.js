@@ -40,6 +40,11 @@ app.get('/api/articles', async (req, res) => {
         const articles = rows.map(r => ({
             ...r,
             tags: JSON.parse(r.tags || '[]'),
+            topics: r.topics ? JSON.parse(r.topics) : [],
+            author: r.author ? JSON.parse(r.author) : null,
+            media: r.media ? JSON.parse(r.media) : [],
+            metrics: r.metrics ? JSON.parse(r.metrics) : null,
+            crawl_context: r.crawl_context ? JSON.parse(r.crawl_context) : null,
             isPublic: !!r.isPublic
         }));
         res.json(articles);
@@ -51,9 +56,39 @@ app.get('/api/articles', async (req, res) => {
 app.post('/api/articles', async (req, res) => {
     const a = req.body;
     try {
-        await run(`INSERT OR REPLACE INTO articles (id, title, content, summary, category, tags, tone, estimatedReadTime, created_at, isPublic, ownerId, imageUrl, deletedAt) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [a.id, a.title, a.content, a.summary, a.category, JSON.stringify(a.tags), a.tone, a.estimatedReadTime, a.created_at, a.isPublic ? 1 : 0, a.ownerId, a.imageUrl, a.deletedAt]
+        await run(`INSERT OR REPLACE INTO articles 
+            (id, source, source_item_id, original_url, title, subtitle, summary, content, content_plain,
+             author, media, imageUrl, category, tags, topics, tone, estimatedReadTime, language,
+             metrics, created_at, publish_time, crawl_context, status, isPublic, ownerId, deletedAt) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                a.id, 
+                a.source || 'manual',
+                a.source_item_id || null,
+                a.original_url || null,
+                a.title, 
+                a.subtitle || null,
+                a.summary, 
+                a.content, 
+                a.content_plain || null,
+                a.author ? JSON.stringify(a.author) : null,
+                a.media ? JSON.stringify(a.media) : null,
+                a.imageUrl || null,
+                a.category, 
+                JSON.stringify(a.tags || []),
+                a.topics ? JSON.stringify(a.topics) : null,
+                a.tone || 'Casual',
+                a.estimatedReadTime || 0,
+                a.language || 'zh',
+                a.metrics ? JSON.stringify(a.metrics) : null,
+                a.created_at || Date.now(),
+                a.publish_time || null,
+                a.crawl_context ? JSON.stringify(a.crawl_context) : null,
+                a.status || 'active',
+                a.isPublic ? 1 : 0, 
+                a.ownerId || null,
+                a.deletedAt || null
+            ]
         );
         res.json({ success: true });
     } catch (e) {

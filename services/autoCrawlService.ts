@@ -1,5 +1,5 @@
 import { Article, UserProfile, ContentMedia, TraceRun, TraceStep } from '../types';
-import { searchNotes, getNoteDetail, XHSNote, XHSNoteDetail } from './xhsService';
+import { searchXHSNotes, getXHSNoteDetail, XHSNote, XHSNoteDetail } from './xhsService';
 
 const API_KEY = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '';
 
@@ -281,7 +281,7 @@ export async function crawlAndImportByKeywords(
     log(`[${i + 1}/${keywords.length}] 搜索关键词: ${keyword}`);
 
     try {
-      const searchResult = await searchNotes(keyword, 1, 'popular');
+      const searchResult = await searchXHSNotes(keyword, 1, 20, 'popular');
       if (!searchResult.success || !searchResult.notes) {
         log(`  搜索失败或无结果`);
         progress[i].status = 'failed';
@@ -296,7 +296,7 @@ export async function crawlAndImportByKeywords(
       for (let j = 0; j < notes.length; j++) {
         const note = notes[j];
         try {
-          const detailResult = await getNoteDetail(note.id, note.xsec_token);
+          const detailResult = await getXHSNoteDetail(note.id, note.xsec_token);
           if (!detailResult.success || !detailResult.note) {
             log(`    [${j + 1}] 获取详情失败`);
             continue;

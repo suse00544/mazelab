@@ -9,7 +9,7 @@ interface Props {
 const MediaCarousel: React.FC<{ media: ContentMedia[] }> = ({ media }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   
-  if (!media || media.length === 0) return null;
+  if (!media || !Array.isArray(media) || media.length === 0) return null;
 
   const handlePrev = () => {
     setCurrentIndex(prev => (prev > 0 ? prev - 1 : media.length - 1));
@@ -100,9 +100,11 @@ const formatNumber = (num: number): string => {
 };
 
 export const ContentDetailCard: React.FC<Props> = ({ article, onClose }) => {
-  const media: ContentMedia[] = article.media || [];
+  const media: ContentMedia[] = [];
   
-  if (media.length === 0 && article.imageUrl) {
+  if (Array.isArray(article.media) && article.media.length > 0) {
+    media.push(...article.media);
+  } else if (article.imageUrl) {
     media.push({
       type: 'image',
       url_local: article.imageUrl,
