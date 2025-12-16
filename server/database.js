@@ -13,21 +13,104 @@ const db = new sqlite3.Database(dbPath);
 
 // Initialize Tables
 db.serialize(() => {
-    // Articles
+    // Articles - 标准化内容 Schema
     db.run(`CREATE TABLE IF NOT EXISTS articles (
         id TEXT PRIMARY KEY,
+        
+        -- 来源信息
+        source TEXT DEFAULT 'manual',
+        source_item_id TEXT,
+        original_url TEXT,
+        
+        -- 基础内容
         title TEXT,
-        content TEXT,
+        subtitle TEXT,
         summary TEXT,
+        content TEXT,
+        content_plain TEXT,
+        
+        -- 作者信息 (JSON)
+        author TEXT,
+        
+        -- 媒体资源 (JSON array)
+        media TEXT,
+        imageUrl TEXT,
+        
+        -- 分类标签
         category TEXT,
-        tags TEXT, -- JSON string
+        tags TEXT,
+        topics TEXT,
+        
+        -- 元数据
         tone TEXT,
         estimatedReadTime INTEGER,
+        language TEXT DEFAULT 'zh',
+        
+        -- 统计数据 (JSON)
+        metrics TEXT,
+        
+        -- 时间戳
         created_at INTEGER,
-        isPublic INTEGER, -- 0 or 1
+        publish_time INTEGER,
+        
+        -- 抓取上下文 (JSON)
+        crawl_context TEXT,
+        
+        -- 状态管理
+        status TEXT DEFAULT 'active',
+        isPublic INTEGER DEFAULT 1,
         ownerId TEXT,
-        imageUrl TEXT,
         deletedAt INTEGER
+    )`);
+    
+    // Onboarding Questions - 冷启动问卷配置
+    db.run(`CREATE TABLE IF NOT EXISTS onboarding_questions (
+        id TEXT PRIMARY KEY,
+        question TEXT NOT NULL,
+        type TEXT NOT NULL,
+        options TEXT,
+        min_val INTEGER,
+        max_val INTEGER,
+        required INTEGER DEFAULT 1,
+        sort_order INTEGER,
+        category TEXT,
+        active INTEGER DEFAULT 1
+    )`);
+    
+    // User Profiles - 用户画像
+    db.run(`CREATE TABLE IF NOT EXISTS user_profiles (
+        userId TEXT PRIMARY KEY,
+        answers TEXT,
+        demographics TEXT,
+        interests TEXT,
+        recent_topics TEXT,
+        created_at INTEGER,
+        updated_at INTEGER
+    )`);
+    
+    // Trace Runs - 流程追踪
+    db.run(`CREATE TABLE IF NOT EXISTS trace_runs (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT,
+        user_id TEXT,
+        type TEXT,
+        status TEXT,
+        started_at INTEGER,
+        ended_at INTEGER
+    )`);
+    
+    // Trace Steps - 步骤详情
+    db.run(`CREATE TABLE IF NOT EXISTS trace_steps (
+        id TEXT PRIMARY KEY,
+        run_id TEXT,
+        step_name TEXT,
+        status TEXT,
+        started_at INTEGER,
+        ended_at INTEGER,
+        duration_ms INTEGER,
+        input TEXT,
+        output TEXT,
+        error TEXT
     )`);
 
     // Interactions

@@ -1,21 +1,141 @@
+// ==========================================
+// 标准化内容 Schema - 所有内容入库必须遵循
+// ==========================================
+export type ContentSource = 'xhs' | 'jina' | 'manual' | 'generated';
+export type ContentStatus = 'active' | 'removed' | 'pending';
 
+export interface ContentAuthor {
+  id: string;
+  name: string;
+  avatar?: string;
+}
+
+export interface ContentMedia {
+  type: 'image' | 'video';
+  url_local: string;      // 本地存储路径 /uploads/xxx
+  url_source?: string;    // 原始来源 URL
+  width?: number;
+  height?: number;
+  order: number;          // 顺序索引
+}
+
+export interface ContentMetrics {
+  likes: number;
+  favorites: number;
+  comments: number;
+  shares: number;
+  views?: number;
+}
+
+export interface CrawlContext {
+  keyword?: string;       // 搜索关键词
+  campaign_id?: string;   // 关联的实验/活动 ID
+  crawled_at: number;     // 抓取时间
+}
+
+// 标准化文章/内容接口
 export interface Article {
   id: string;
+  
+  // 来源信息
+  source: ContentSource;
+  source_item_id?: string;  // 原平台的 ID（如小红书笔记 ID）
+  original_url?: string;    // 原始链接
+  
+  // 基础内容
   title: string;
-  content: string; // Markdown or plain text
+  subtitle?: string;
   summary: string;
+  content: string;          // Markdown 格式
+  content_plain?: string;   // 纯文本格式
+  
+  // 作者信息
+  author?: ContentAuthor;
+  
+  // 媒体资源
+  media?: ContentMedia[];   // 图片/视频列表
+  imageUrl?: string;        // 封面图（兼容旧字段）
+  
+  // 分类标签
   category: string;
   tags: string[];
-  // difficulty removed
-  tone: 'Professional' | 'Casual' | 'Humorous' | 'Deep';
-  estimatedReadTime: number; // seconds
-  created_at: number;
+  topics?: string[];        // 话题标签
   
-  // New fields for Content Management
-  isPublic: boolean; // True = in Public Library
-  ownerId?: string; // If private/created by user
-  imageUrl?: string; // Cover image URL
-  deletedAt?: number; // Timestamp for soft deletion
+  // 元数据
+  tone: 'Professional' | 'Casual' | 'Humorous' | 'Deep';
+  estimatedReadTime: number;
+  language?: string;
+  
+  // 统计数据
+  metrics?: ContentMetrics;
+  
+  // 时间戳
+  created_at: number;       // 创建/入库时间
+  publish_time?: number;    // 原始发布时间
+  
+  // 抓取上下文
+  crawl_context?: CrawlContext;
+  
+  // 状态管理
+  status: ContentStatus;
+  isPublic: boolean;
+  ownerId?: string;
+  deletedAt?: number;
+}
+
+// ==========================================
+// 冷启动问卷相关类型
+// ==========================================
+export interface OnboardingQuestion {
+  id: string;
+  question: string;
+  type: 'single' | 'multiple' | 'text' | 'scale';
+  options?: string[];       // 选项（单选/多选时）
+  min?: number;             // 量表最小值
+  max?: number;             // 量表最大值
+  required: boolean;
+  order: number;
+  category: 'basic' | 'interest' | 'behavior';
+}
+
+export interface UserProfile {
+  userId: string;
+  answers: Record<string, any>;  // 问卷答案
+  demographics?: {
+    gender?: string;
+    age_range?: string;
+  };
+  interests?: string[];
+  recent_topics?: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+// ==========================================
+// Trace 日志类型
+// ==========================================
+export interface TraceStep {
+  id: string;
+  run_id: string;
+  step_name: string;
+  status: 'running' | 'completed' | 'failed';
+  started_at: number;
+  ended_at?: number;
+  duration_ms?: number;
+  input?: any;
+  output?: any;
+  error?: string;
+}
+
+export interface TraceRun {
+  id: string;
+  experiment_id?: string;
+  user_id: string;
+  type: 'onboarding' | 'keyword_generation' | 'content_crawl' | 'recommendation';
+  status: 'running' | 'completed' | 'failed';
+  started_at: number;
+  ended_at?: number;
+  steps: TraceStep[];
 }
 
 export interface User {

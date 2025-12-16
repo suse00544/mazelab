@@ -236,6 +236,150 @@ app.post('/api/config', async (req, res) => {
     }
 });
 
+// --- ONBOARDING QUESTIONS API ---
+app.get('/api/onboarding/questions', async (req, res) => {
+    try {
+        const rows = await all('SELECT * FROM onboarding_questions WHERE active = 1 ORDER BY sort_order ASC');
+        res.json(rows.map(r => ({
+            ...r,
+            options: r.options ? JSON.parse(r.options) : null,
+            required: !!r.required
+        })));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/onboarding/questions', async (req, res) => {
+    const q = req.body;
+    try {
+        await run(`INSERT OR REPLACE INTO onboarding_questions 
+            (id, question, type, options, min_val, max_val, required, sort_order, category, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [q.id, q.question, q.type, JSON.stringify(q.options || []), q.min, q.max, 
+             q.required ? 1 : 0, q.order, q.category, 1]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/onboarding/questions/:id', async (req, res) => {
+    try {
+        await run('UPDATE onboarding_questions SET active = 0 WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- USER PROFILES API ---
+app.get('/api/user-profile/:userId', async (req, res) => {
+    try {
+        const row = await get('SELECT * FROM user_profiles WHERE userId = ?', [req.params.userId]);
+        if (!row) return res.json(null);
+        res.json({
+            ...row,
+            answers: JSON.parse(row.answers || '{}'),
+            demographics: JSON.parse(row.demographics || '{}'),
+            interests: JSON.parse(row.interests || '[]'),
+            recent_topics: JSON.parse(row.recent_topics || '[]')
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/user-profile', async (req, res) => {
+    const p = req.body;
+    try {
+        const now = Date.now();
+        await run(`INSERT OR REPLACE INTO user_profiles 
+            (userId, answers, demographics, interests, recent_topics, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM user_profiles WHERE userId = ?), ?), ?)`,
+            [p.userId, JSON.stringify(p.answers || {}), JSON.stringify(p.demographics || {}),
+             JSON.stringify(p.interests || []), JSON.stringify(p.recent_topics || []),
+             p.userId, now, now]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- TRACE API ---
+app.get('/api/trace/:runId', async (req, res) => {
+    try {
+        const run_data = await get('SELECT * FROM trace_runs WHERE id = ?', [req.params.runId]);
+        if (!run_data) return res.json(null);
+        const steps = await all('SELECT * FROM trace_steps WHERE run_id = ? ORDER BY started_at ASC', [req.params.runId]);
+        res.json({
+            ...run_data,
+            steps: steps.map(s => ({
+                ...s,
+                input: s.input ? JSON.parse(s.input) : null,
+                output: s.output ? JSON.parse(s.output) : null
+            }))
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/trace/run', async (req, res) => {
+    const r = req.body;
+    try {
+        await run(`INSERT INTO trace_runs (id, experiment_id, user_id, type, status, started_at)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+            [r.id, r.experiment_id, r.user_id, r.type, 'running', Date.now()]
+        );
+        res.json({ success: true, id: r.id });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/trace/step', async (req, res) => {
+    const s = req.body;
+    try {
+        await run(`INSERT INTO trace_steps (id, run_id, step_name, status, started_at, input)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+            [s.id, s.run_id, s.step_name, 'running', Date.now(), JSON.stringify(s.input || null)]
+        );
+        res.json({ success: true, id: s.id });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/trace/step/:id', async (req, res) => {
+    const { status, output, error } = req.body;
+    try {
+        const now = Date.now();
+        const step = await get('SELECT started_at FROM trace_steps WHERE id = ?', [req.params.id]);
+        const duration = step ? now - step.started_at : 0;
+        await run(`UPDATE trace_steps SET status = ?, ended_at = ?, duration_ms = ?, output = ?, error = ? WHERE id = ?`,
+            [status, now, duration, JSON.stringify(output || null), error || null, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/trace/run/:id', async (req, res) => {
+    const { status } = req.body;
+    try {
+        await run(`UPDATE trace_runs SET status = ?, ended_at = ? WHERE id = ?`,
+            [status, Date.now(), req.params.id]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- JINA API ENDPOINTS ---
 // Get your Jina AI API key for free: https://jina.ai/?sui=apikey
 const JINA_API_KEY = process.env.JINA_API_KEY;
