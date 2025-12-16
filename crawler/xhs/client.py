@@ -88,12 +88,20 @@ class XiaoHongShuClient:
 
     async def get(self, uri: str, params: Optional[Dict] = None) -> Dict:
         headers = await self._pre_headers(uri, params)
+        if self.cookie_dict:
+            cookie_str = "; ".join([f"{k}={v}" for k, v in self.cookie_dict.items()])
+            headers["Cookie"] = cookie_str
         full_url = f"{self._host}{uri}"
         return await self.request(method="GET", url=full_url, headers=headers, params=params)
 
     async def post(self, uri: str, data: dict, **kwargs) -> Dict:
         headers = await self._pre_headers(uri, payload=data)
+        headers["Content-Type"] = "application/json;charset=UTF-8"
+        if self.cookie_dict:
+            cookie_str = "; ".join([f"{k}={v}" for k, v in self.cookie_dict.items()])
+            headers["Cookie"] = cookie_str
         json_str = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+        print(f"[Client] Request headers: Cookie present={bool(headers.get('Cookie'))}, X-S present={bool(headers.get('X-S'))}")
         return await self.request(method="POST", url=f"{self._host}{uri}", data=json_str, headers=headers, **kwargs)
 
     async def update_cookies(self, browser_context: BrowserContext):
