@@ -27,11 +27,29 @@ export const MarkdownRenderer: React.FC<Props> = ({ content }) => {
   };
 
   const parseInline = (text: string) => {
-      // Simple parser for **bold**
-      const parts = text.split(/(\*\*.*?\*\*)/g);
+      // Parse **bold** and images ![alt](url)
+      const parts = text.split(/(\*\*.*?\*\*|!\[.*?\]\(.*?\))/g);
       return parts.map((part, i) => {
           if (part.startsWith('**') && part.endsWith('**')) {
               return <strong key={i} className="font-bold text-slate-900">{part.slice(2, -2)}</strong>;
+          }
+          // Image syntax: ![alt](url)
+          const imgMatch = part.match(/^!\[(.*?)\]\((.*?)\)$/);
+          if (imgMatch) {
+              const [, alt, src] = imgMatch;
+              // Handle local /uploads/ paths - use backend server
+              const imgSrc = src.startsWith('/uploads/') ? `http://localhost:3001${src}` : src;
+              return (
+                <img 
+                  key={i} 
+                  src={imgSrc} 
+                  alt={alt} 
+                  className="max-w-full h-auto rounded-lg my-4 shadow-sm"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              );
           }
           return part;
       });
