@@ -82,3 +82,8 @@ externalPort = 8000
 
 [userenv.shared]
 JINA_API_KEY = "jina_243aefcda34c481199f025626fdc7c27uqio96mxUChsnt741dAxHSfQ7pSy"
+
+[deployment]
+deploymentTarget = "vm"
+run = ["bash", "start.sh"]
+build = ["bash", "-c", "npm install && npm run build && cd server && npm install && cd ../crawler && pip install -r requirements.txt && playwright install chromium"]

@@ -7,11 +7,22 @@ const { run, all, get } = require('./database');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const PORT = 3001;
-const HOST = process.env.REPLIT_DEV_DOMAIN || 'localhost:3001';
+const PORT = process.env.NODE_ENV === 'production' ? 5000 : 3001;
+const HOST = process.env.REPLIT_DEV_DOMAIN || `localhost:${PORT}`;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Health check endpoint for deployment
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: Date.now() });
+});
+
+// Serve static frontend build in production
+if (process.env.NODE_ENV === 'production') {
+    const distPath = path.join(__dirname, '../dist');
+    app.use(express.static(distPath));
+}
 
 // Static files for images
 const uploadsDir = path.join(__dirname, 'public/uploads');
@@ -609,6 +620,13 @@ app.post('/api/xhs/comments', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Catch-all route for SPA in production
+if (process.env.NODE_ENV === 'production') {
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, '../dist/index.html'));
+    });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
