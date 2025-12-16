@@ -15,7 +15,6 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const [activeTab, setActiveTab] = useState<'public' | 'trash' | 'mcp' | 'jina' | 'xhs'>('public');
   const [publicArticles, setPublicArticles] = useState<Article[]>([]);
   const [recycledArticles, setRecycledArticles] = useState<Article[]>([]);
-  const [mySeedIds, setMySeedIds] = useState<string[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   
   const [isEditing, setIsEditing] = useState(false);
@@ -244,15 +243,13 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   }, [activeTab]);
 
   const loadData = async () => {
-      const [pub, rec, seeds, cats] = await Promise.all([
+      const [pub, rec, cats] = await Promise.all([
           db.getPublicArticles(),
           db.getRecycledArticles(),
-          db.getUserSeedConfig(user.id),
           db.getCategories()
       ]);
       setPublicArticles(pub);
       setRecycledArticles(rec);
-      setMySeedIds(seeds);
       setAvailableCategories(cats);
   };
   
@@ -398,25 +395,28 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       setIsSavingXhsNote(true);
       try {
           const downloadedImages: string[] = [];
-          for (const imgUrl of xhsNoteDetail.images) {
+          const images = xhsNoteDetail.images || [];
+          const tagList = xhsNoteDetail.tag_list || [];
+          for (const imgUrl of images) {
               const downloaded = await downloadImage(imgUrl);
               downloadedImages.push(downloaded || imgUrl);
           }
-          const authorInfo = xhsNoteDetail.user.nickname ? `> 作者: ${xhsNoteDetail.user.nickname}\n\n` : '';
-          const tagsInfo = xhsNoteDetail.tag_list.length > 0 ? `标签: ${xhsNoteDetail.tag_list.join(', ')}\n\n` : '';
-          const statsInfo = `点赞: ${xhsNoteDetail.liked_count} | 收藏: ${xhsNoteDetail.collected_count} | 评论: ${xhsNoteDetail.comment_count}\n\n`;
+          const authorInfo = xhsNoteDetail.user?.nickname ? `> 作者: ${xhsNoteDetail.user.nickname}\n\n` : '';
+          const tagsInfo = tagList.length > 0 ? `标签: ${tagList.join(', ')}\n\n` : '';
+          const statsInfo = `点赞: ${xhsNoteDetail.liked_count || 0} | 收藏: ${xhsNoteDetail.collected_count || 0} | 评论: ${xhsNoteDetail.comment_count || 0}\n\n`;
           const imagesMarkdown = downloadedImages.length > 0 ? downloadedImages.map(url => `![图片](${url})`).join('\n\n') + '\n\n' : '';
-          const fullContent = authorInfo + tagsInfo + statsInfo + xhsNoteDetail.desc + '\n\n' + imagesMarkdown;
+          const desc = xhsNoteDetail.desc || '';
+          const fullContent = authorInfo + tagsInfo + statsInfo + desc + '\n\n' + imagesMarkdown;
           const newArticle: Article = {
               id: `xhs-${Date.now()}`,
               source: 'xhs',
               title: xhsNoteDetail.title || '小红书笔记',
               content: fullContent,
-              summary: xhsNoteDetail.desc.substring(0, 100) + '...',
+              summary: desc.substring(0, 100) + (desc.length > 100 ? '...' : ''),
               category: '小红书导入',
-              tags: xhsNoteDetail.tag_list,
+              tags: tagList,
               tone: 'Professional',
-              estimatedReadTime: Math.ceil(xhsNoteDetail.desc.length / 500 * 60),
+              estimatedReadTime: Math.ceil((desc.length || 1) / 500 * 60),
               created_at: Date.now(),
               isPublic: true,
               ownerId: user.id,
@@ -557,14 +557,6 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
     alert('保存成功！已添加到公共库。');
   };
   
-  const handleToggleSeed = async (articleId: string) => {
-      let newSeeds = [...mySeedIds];
-      if (newSeeds.includes(articleId)) newSeeds = newSeeds.filter(id => id !== articleId);
-      else newSeeds.push(articleId);
-      await db.updateUserSeedConfig(user.id, newSeeds);
-      setMySeedIds(newSeeds);
-  };
-
   const handleDelete = async (id: string) => { await db.softDeleteArticle(id); loadData(); };
   const handleRestore = async (id: string) => { await db.restoreArticle(id); loadData(); };
   const handleAddCategory = () => { if (newCategoryInput && !availableCategories.includes(newCategoryInput)) { setAvailableCategories(prev => [...prev, newCategoryInput]); setCategory(newCategoryInput); setNewCategoryInput(''); } };
@@ -732,7 +724,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                               </div>
                           </div>
                           <h4 className="text-xl font-bold text-slate-800">{xhsNoteDetail.title || '无标题'}</h4>
-                          {xhsNoteDetail.images.length > 0 && (
+                          {(xhsNoteDetail.images?.length ?? 0) > 0 && (
                               <div className="grid grid-cols-3 gap-2">
                                   {xhsNoteDetail.images.map((img, idx) => (
                                       <img 
@@ -747,7 +739,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                           )}
                           <div className="text-slate-700 whitespace-pre-wrap">{xhsNoteDetail.desc}</div>
                           <div className="flex flex-wrap gap-2">
-                              {xhsNoteDetail.tag_list.map((tag, idx) => (
+                              {(xhsNoteDetail.tag_list || []).map((tag, idx) => (
                                   <span key={idx} className="px-2 py-1 bg-red-50 text-red-600 text-xs rounded-full">#{tag}</span>
                               ))}
                           </div>

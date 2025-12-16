@@ -179,10 +179,12 @@ function convertXHSNoteToArticle(
   keyword: string,
   localImages: string[]
 ): Article {
+  const noteImages = note.images || [];
+  const desc = note.desc || '';
   const media: ContentMedia[] = localImages.map((url, i) => ({
     type: 'image' as const,
     url_local: url,
-    url_source: note.images[i],
+    url_source: noteImages[i] || '',
     order: i
   }));
 
@@ -191,7 +193,7 @@ function convertXHSNoteToArticle(
   const commentNum = parseNumber(note.comment_count);
 
   const tagsFromContent = note.tag_list || [];
-  const hashtagMatches = note.desc.match(/#([^#\s]+)/g) || [];
+  const hashtagMatches = desc.match(/#([^#\s]+)/g) || [];
   const hashtags = hashtagMatches.map(t => t.replace('#', ''));
   const allTags = [...new Set([...tagsFromContent, ...hashtags])];
 
@@ -202,14 +204,14 @@ function convertXHSNoteToArticle(
     source: 'xhs',
     source_item_id: note.id,
     original_url: `https://www.xiaohongshu.com/explore/${note.id}`,
-    title: note.title || note.desc.slice(0, 50),
-    summary: note.desc.slice(0, 200),
-    content: `${note.desc}\n\n${imagesMarkdown}`,
-    content_plain: note.desc,
+    title: note.title || desc.slice(0, 50) || '无标题',
+    summary: desc.slice(0, 200),
+    content: `${desc}\n\n${imagesMarkdown}`,
+    content_plain: desc,
     author: {
-      id: note.user.user_id,
-      name: note.user.nickname,
-      avatar: note.user.avatar
+      id: note.user?.user_id || '',
+      name: note.user?.nickname || '未知用户',
+      avatar: note.user?.avatar || ''
     },
     media,
     imageUrl: localImages[0] || '',
@@ -217,7 +219,7 @@ function convertXHSNoteToArticle(
     tags: allTags,
     topics: [keyword],
     tone: 'Casual',
-    estimatedReadTime: Math.ceil(note.desc.length / 300) * 60,
+    estimatedReadTime: Math.ceil((desc.length || 1) / 300) * 60,
     language: 'zh',
     metrics: {
       likes: likesNum,
@@ -304,8 +306,9 @@ export async function crawlAndImportByKeywords(
 
           const noteDetail = detailResult.note;
           const localImages: string[] = [];
+          const noteImages = noteDetail.images || [];
           
-          for (const imgUrl of noteDetail.images) {
+          for (const imgUrl of noteImages) {
             const localUrl = await downloadAndSaveImage(imgUrl);
             localImages.push(localUrl);
           }
