@@ -150,6 +150,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const downloadImage = async (url: string): Promise<string | null> => {
     if (!url) return null;
     try {
+      console.log('[Download] Starting:', url.substring(0, 80) + '...');
       const response = await fetch('/api/image-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -157,10 +158,14 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       });
       if (response.ok) {
         const data = await response.json();
+        console.log('[Download] Success:', data.url);
         return data.url; // 返回本地路径如 /uploads/xxx.jpg
+      } else {
+        const errText = await response.text();
+        console.error('[Download] Failed:', response.status, errText);
       }
     } catch (e) {
-      console.error('Failed to download image:', e);
+      console.error('[Download] Error:', e);
     }
     return null;
   };
