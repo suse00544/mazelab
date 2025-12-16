@@ -12,7 +12,7 @@ interface Props {
 }
 
 export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
-  const [activeTab, setActiveTab] = useState<'public' | 'my-seed' | 'trash' | 'mcp' | 'jina' | 'xhs'>('my-seed');
+  const [activeTab, setActiveTab] = useState<'public' | 'trash' | 'mcp' | 'jina' | 'xhs'>('public');
   const [publicArticles, setPublicArticles] = useState<Article[]>([]);
   const [recycledArticles, setRecycledArticles] = useState<Article[]>([]);
   const [mySeedIds, setMySeedIds] = useState<string[]>([]);
@@ -195,6 +195,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       
       const newArticle: Article = {
         id: `mcp-${Date.now()}-${index}`,
+        source: 'mcp',
         title: item.title,
         content: fullContent,
         summary: item.desc.substring(0, 100) + '...',
@@ -205,7 +206,8 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
         created_at: Date.now(),
         isPublic: true,
         ownerId: user.id,
-        imageUrl: downloadedImages[0] || undefined // 第一张图作为封面
+        imageUrl: downloadedImages[0] || undefined,
+        status: 'active'
       };
       
       await db.saveArticle(newArticle);
@@ -407,6 +409,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
           const fullContent = authorInfo + tagsInfo + statsInfo + xhsNoteDetail.desc + '\n\n' + imagesMarkdown;
           const newArticle: Article = {
               id: `xhs-${Date.now()}`,
+              source: 'xhs',
               title: xhsNoteDetail.title || '小红书笔记',
               content: fullContent,
               summary: xhsNoteDetail.desc.substring(0, 100) + '...',
@@ -417,7 +420,8 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
               created_at: Date.now(),
               isPublic: true,
               ownerId: user.id,
-              imageUrl: downloadedImages[0] || undefined
+              imageUrl: downloadedImages[0] || undefined,
+              status: 'active'
           };
           await db.saveArticle(newArticle);
           await loadData();
@@ -532,6 +536,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
     if (!title.trim() || !content.trim() || !category.trim()) { alert("请填写标题、分类和正文内容"); return; }
     const newArticle: Article = {
       id: `manual-${Date.now()}`,
+      source: 'manual',
       title,
       content,
       summary: content.substring(0, 100) + '...',
@@ -542,7 +547,8 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       created_at: Date.now(),
       isPublic: true, 
       ownerId: user.id,
-      imageUrl: imageUrl.trim() || undefined
+      imageUrl: imageUrl.trim() || undefined,
+      status: 'active'
     };
     await db.saveArticle(newArticle);
     loadData();
@@ -564,8 +570,7 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
   const handleAddCategory = () => { if (newCategoryInput && !availableCategories.includes(newCategoryInput)) { setAvailableCategories(prev => [...prev, newCategoryInput]); setCategory(newCategoryInput); setNewCategoryInput(''); } };
   const resetForm = () => { setTitle(''); setContent(''); setImageUrl(''); setCategory(''); setNewCategoryInput(''); };
 
-  const mySeedArticles = publicArticles.filter(a => mySeedIds.includes(a.id));
-  const displayArticles = activeTab === 'trash' ? recycledArticles : (activeTab === 'public' ? publicArticles : mySeedArticles);
+  const displayArticles = activeTab === 'trash' ? recycledArticles : publicArticles;
 
   // Render helpers (ArticlePreviewModal, StartConfirmationModal, renderArticleCard, renderTableRow) same as before...
   // Omitted for brevity, but logically identical, ensuring async functions are awaited where called.
@@ -576,7 +581,6 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
         <h1 className="text-2xl font-bold text-slate-800">内容后台</h1>
         <div className="flex bg-slate-200 p-1 rounded-lg overflow-x-auto max-w-full w-full md:w-auto">
-            <button onClick={() => setActiveTab('my-seed')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'my-seed' ? 'bg-white shadow text-indigo-700' : 'text-slate-600'}`}>我的配置 ({mySeedIds.length})</button>
             <button onClick={() => setActiveTab('public')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'public' ? 'bg-white shadow text-indigo-700' : 'text-slate-600'}`}>公共库 ({publicArticles.length})</button>
             <button onClick={() => setActiveTab('trash')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'trash' ? 'bg-white shadow text-red-700' : 'text-slate-600'}`}>回收站 ({recycledArticles.length})</button>
             <button onClick={() => setActiveTab('xhs')} className={`flex-1 md:flex-none px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-1 ${activeTab === 'xhs' ? 'bg-white shadow text-red-600' : 'text-slate-600'}`}>📕 小红书</button>
@@ -1380,9 +1384,6 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                             <td className="p-3">
                                 <div className="flex gap-2">
                                    <button onClick={() => setPreviewArticle(a)} className="text-xs border px-2 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100">预览</button>
-                                   {activeTab !== 'trash' && (
-                                     <button onClick={() => handleToggleSeed(a.id)} className="text-xs border px-2 py-1 rounded">{mySeedIds.includes(a.id) ? '移除配置' : '加入配置'}</button>
-                                   )}
                                    {activeTab === 'trash' ? (
                                      <button onClick={() => handleRestore(a.id)} className="text-xs text-green-600 border px-2 py-1 rounded">恢复</button>
                                    ) : (
@@ -1427,14 +1428,6 @@ export const Admin: React.FC<Props> = ({ user, onStartExperiment }) => {
                       ← 返回列表
                   </button>
                   <div className="flex gap-2">
-                      {activeTab !== 'trash' && (
-                          <button 
-                              onClick={() => { handleToggleSeed(previewArticle.id); }}
-                              className={`px-3 py-1.5 rounded text-sm font-medium ${mySeedIds.includes(previewArticle.id) ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}
-                          >
-                              {mySeedIds.includes(previewArticle.id) ? '★ 已加入配置' : '☆ 加入配置'}
-                          </button>
-                      )}
                   </div>
               </div>
 

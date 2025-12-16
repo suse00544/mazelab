@@ -710,6 +710,59 @@ app.post('/api/image-download', async (req, res) => {
     }
 });
 
+// --- GEMINI AI ENDPOINTS ---
+app.post('/api/ai/generate-keywords', async (req, res) => {
+    const { profile, model } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    
+    if (!apiKey) {
+        return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
+    }
+    
+    const prompt = `你是一个内容推荐系统的关键词生成器。根据用户画像，生成10个小红书搜索关键词。
+
+用户画像：
+- 性别: ${profile.demographics?.gender || '未知'}
+- 年龄段: ${profile.demographics?.age_range || '未知'}
+- 兴趣领域: ${(profile.interests || []).join(', ') || '未指定'}
+- 最近感兴趣的话题: ${(profile.recent_topics || []).join(', ') || '未指定'}
+- 问卷回答: ${JSON.stringify(profile.answers || {})}
+
+要求：
+1. 生成10个搜索关键词
+2. 关键词要具体、可搜索，能找到高质量内容
+3. 覆盖用户的主要兴趣领域
+4. 包含一些探索性关键词（用户可能感兴趣但未明确表达的）
+5. 关键词长度适中（2-6个字）
+
+请按以下JSON格式返回：
+{
+  "keywords": ["关键词1", "关键词2", ...],
+  "reasoning": "简要说明生成这些关键词的理由"
+}`;
+
+    try {
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+            model: model || 'gemini-2.0-flash',
+            contents: prompt
+        });
+
+        const text = response.text || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            return res.status(500).json({ error: '无法解析关键词响应' });
+        }
+
+        const result = JSON.parse(jsonMatch[0]);
+        res.json(result);
+    } catch (e) {
+        console.error('[AI] Keyword generation error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- XHS CRAWLER PROXY ENDPOINTS ---
 const CRAWLER_URL = 'http://localhost:8000';
 

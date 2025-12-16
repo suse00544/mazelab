@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { db } from './services/db';
-import { User, ProcessState, Experiment } from './types';
+import { User, ProcessState, Experiment, UserProfile } from './types';
 import { Feed } from './pages/Feed';
 import { Admin } from './pages/Admin';
 import { UserSelect } from './components/UserSelect';
@@ -8,6 +8,8 @@ import { HistoryModal } from './components/HistoryModal';
 import { ModelSelector, MODELS } from './components/ModelSelector';
 import { TracePopover } from './components/TracePopover';
 import { ConfigModal } from './components/ConfigModal';
+import { OnboardingWizard } from './components/OnboardingWizard';
+import { crawlAndImportByKeywords } from './services/autoCrawlService';
 
 const INITIAL_PROCESS_STATE: ProcessState = {
     isProcessing: false,
@@ -26,6 +28,9 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
   const [configProps, setConfigProps] = useState<{strategy: string, content: string} | null>(null);
   const [experimentStates, setExperimentStates] = useState<Record<string, ProcessState>>({});
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingLogs, setOnboardingLogs] = useState<string[]>([]);
+  const [isOnboardingProcessing, setIsOnboardingProcessing] = useState(false);
 
   const activeProcessState = currentExperiment ? (experimentStates[currentExperiment.id] || INITIAL_PROCESS_STATE) : INITIAL_PROCESS_STATE;
   const updateExperimentState = (expId: string, update: Partial<ProcessState> | ((prev: ProcessState) => Partial<ProcessState>)) => {
@@ -44,12 +49,64 @@ const App: React.FC = () => {
   
   const handleCreateExperiment = async () => {
       if (!currentUser) return;
-      const seedIds = await db.getUserSeedConfig(currentUser.id);
-      if (seedIds.length === 0) {
-          alert('请先配置冷启动种子内容。');
-          setView('admin');
-          return;
+      setShowOnboarding(true);
+  };
+
+  const handleOnboardingComplete = async (profile: UserProfile) => {
+      if (!currentUser) return;
+      setShowOnboarding(false);
+      setIsOnboardingProcessing(true);
+      setOnboardingLogs(['开始实验初始化流程...']);
+
+      const addLog = (msg: string) => {
+          setOnboardingLogs(prev => [...prev, msg]);
+      };
+
+      try {
+          addLog('1. 根据用户偏好生成搜索关键词...');
+          const keywordRes = await fetch('/api/ai/generate-keywords', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profile, model: selectedModel })
+          });
+          if (!keywordRes.ok) {
+              const err = await keywordRes.json();
+              throw new Error(err.error || '关键词生成失败');
+          }
+          const keywordResult = await keywordRes.json();
+          const keywords = keywordResult.keywords || [];
+          addLog(`   生成关键词: ${keywords.join(', ')}`);
+          addLog(`   推理: ${keywordResult.reasoning || ''}`);
+          
+          if (keywords.length === 0) {
+              throw new Error('未能生成有效关键词');
+          }
+
+          addLog('2. 从小红书搜索并导入内容到公共库...');
+          const articles = await crawlAndImportByKeywords(
+              keywords, 
+              3, 
+              undefined,
+              addLog
+          );
+          addLog(`   成功导入 ${articles.length} 篇内容`);
+
+          addLog('3. 创建新实验...');
+          const { experiment } = await db.createExperiment(currentUser.id);
+          setCurrentExperiment(experiment);
+
+          addLog('实验初始化完成！');
+          setView('feed');
+      } catch (e: any) {
+          addLog(`错误: ${e.message}`);
+      } finally {
+          setIsOnboardingProcessing(false);
       }
+  };
+
+  const handleOnboardingSkip = async () => {
+      if (!currentUser) return;
+      setShowOnboarding(false);
       const { experiment } = await db.createExperiment(currentUser.id);
       setCurrentExperiment(experiment);
       setView('feed');
@@ -155,6 +212,30 @@ const App: React.FC = () => {
       
       {showHistory && currentUser && <HistoryModal user={currentUser} onClose={() => setShowHistory(false)} onSelectExperiment={handleSelectHistory} />}
       {showConfig && configProps && <ConfigModal initialStrategyPrompt={configProps.strategy} initialContentPrompt={configProps.content} experimentId={currentExperiment?.id} onClose={() => setShowConfig(false)} onSave={handleSaveConfig} />}
+      
+      {showOnboarding && currentUser && (
+        <OnboardingWizard 
+          userId={currentUser.id} 
+          onComplete={handleOnboardingComplete}
+          onSkip={handleOnboardingSkip}
+        />
+      )}
+
+      {isOnboardingProcessing && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-slate-900 rounded-xl p-6 max-w-lg w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
+              <h2 className="text-white font-bold text-lg">正在初始化实验...</h2>
+            </div>
+            <div className="bg-black/50 rounded-lg p-4 max-h-64 overflow-y-auto font-mono text-xs text-slate-300 space-y-1">
+              {onboardingLogs.map((log, i) => (
+                <div key={i} className={log.startsWith('错误') ? 'text-red-400' : ''}>{log}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

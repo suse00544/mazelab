@@ -1,7 +1,7 @@
 // ==========================================
 // 标准化内容 Schema - 所有内容入库必须遵循
 // ==========================================
-export type ContentSource = 'xhs' | 'jina' | 'manual' | 'generated';
+export type ContentSource = 'xhs' | 'jina' | 'manual' | 'generated' | 'mcp';
 export type ContentStatus = 'active' | 'removed' | 'pending';
 
 export interface ContentAuthor {
