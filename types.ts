@@ -183,7 +183,7 @@ export interface Interaction {
     title: string;
     category: string;
     tags: string[];
-    // difficulty removed
+    summary?: string;
   };
 }
 

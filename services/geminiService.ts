@@ -63,7 +63,7 @@ const buildEvolutionaryLog = (interactions: Interaction[], allSessions: Generate
                 title: i.articleContext.title,
                 category: i.articleContext.category,
                 tags: i.articleContext.tags,
-                content_summary_for_context: article?.summary || "No summary available"
+                content_summary_for_context: i.articleContext.summary || article?.summary || "No summary available"
               },
               user_behavior: {
                 action: i.clicked ? "CLICKED_AND_VIEWED" : "SKIPPED_IN_FEED",
@@ -84,7 +84,28 @@ const buildEvolutionaryLog = (interactions: Interaction[], allSessions: Generate
       });
   });
 
-  return processedSessions.slice(-3);
+  // Flatten all interactions, keep last 30, then regroup by session
+  const allInteractionsFlat: { sessionId: string; interaction: any }[] = [];
+  processedSessions.forEach(s => {
+      s.interactions.forEach((i: any) => {
+          allInteractionsFlat.push({ sessionId: s.session_id, interaction: i });
+      });
+  });
+  const last30 = allInteractionsFlat.slice(-30);
+  
+  // Rebuild session structure from last 30 interactions
+  const regrouped = new Map<string, any[]>();
+  last30.forEach(item => {
+      if (!regrouped.has(item.sessionId)) {
+          regrouped.set(item.sessionId, []);
+      }
+      regrouped.get(item.sessionId)?.push(item.interaction);
+  });
+  
+  return Array.from(regrouped.entries()).map(([sessionId, interactions]) => ({
+      session_id: sessionId,
+      interactions
+  }));
 };
 
 export const FIXED_STRATEGY_PREAMBLE = `你是一位专家级推荐系统策略师。

@@ -78,6 +78,7 @@ export const ArticleView: React.FC<Props> = ({ article, userId, sessionId, exper
         title: article.title,
         category: article.category,
         tags: article.tags,
+        summary: article.summary,
       }
     };
     

@@ -106,6 +106,7 @@ export const Feed: React.FC<Props> = ({
           title: article.title,
           category: article.category,
           tags: article.tags,
+          summary: article.summary,
         }
       }));
 
