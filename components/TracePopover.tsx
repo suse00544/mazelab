@@ -1,7 +1,6 @@
 
 import React, { useState } from 'react';
 import { ProcessState } from '../types';
-import { FIXED_STRATEGY_PREAMBLE, FIXED_CONTENT_PREAMBLE } from '../services/geminiService';
 
 interface Props {
     processState: ProcessState;
@@ -9,48 +8,8 @@ interface Props {
 }
 
 export const TracePopover: React.FC<Props> = ({ processState, onClose }) => {
-    const [activeTab, setActiveTab] = useState<'log' | 'strategy' | 'content'>('log');
-
-    // Helper to render the colorful history visualization
-    const renderHistoryVisualization = (interactions: any[]) => {
-        if (!interactions || !Array.isArray(interactions)) return <div className="text-slate-500 italic p-2">Waiting for history data...</div>;
-
-        return (
-            <div className="space-y-3 pl-2 border-l-2 border-slate-700 ml-1 my-2">
-                {interactions.map((session, sIdx) => (
-                    <div key={sIdx} className="bg-slate-800/50 rounded p-2 border border-slate-700">
-                         <div className="text-[10px] text-indigo-400 font-bold mb-2 uppercase tracking-wider flex justify-between">
-                            <span>SESSION: {session.session_id}</span>
-                            <span className="text-slate-600">Items: {session.interactions?.length}</span>
-                         </div>
-                         <div className="space-y-2">
-                             {session.interactions?.map((item: any, iIdx: number) => (
-                                 <div key={iIdx} className="bg-black/20 p-2 rounded text-[10px] grid grid-cols-12 gap-2">
-                                     <div className="col-span-8 text-slate-300">
-                                         <span className="text-slate-500 mr-1">Title:</span> 
-                                         <span className="font-medium text-slate-200">{item.article_context?.title}</span>
-                                     </div>
-                                     <div className="col-span-4 text-right">
-                                         <span className={`font-bold px-1 rounded ${item.user_behavior?.action === 'CLICKED_AND_VIEWED' ? 'bg-green-900/50 text-green-400' : 'bg-slate-700 text-slate-400'}`}>
-                                            {item.user_behavior?.action === 'CLICKED_AND_VIEWED' ? 'VIEWED' : 'SKIPPED'}
-                                         </span>
-                                     </div>
-                                     {item.user_behavior?.action === 'CLICKED_AND_VIEWED' && (
-                                         <div className="col-span-12 flex gap-3 text-slate-500 border-t border-slate-700/50 pt-1 mt-1">
-                                             <span>⏱ {item.user_behavior.time_spent_seconds}s</span>
-                                             <span>📜 {item.user_behavior.read_percentage}</span>
-                                             {item.user_behavior.interactions?.liked && <span className="text-pink-400">♥ Liked</span>}
-                                             {item.user_behavior.interactions?.comment && <span className="text-yellow-400">💬 "{item.user_behavior.interactions.comment}"</span>}
-                                         </div>
-                                     )}
-                                 </div>
-                             ))}
-                         </div>
-                    </div>
-                ))}
-            </div>
-        );
-    };
+    const [activeTab, setActiveTab] = useState<'log' | 'prompts' | 'interactions'>('log');
+    const [expandedInteractionIndex, setExpandedInteractionIndex] = useState<number | null>(null);
 
     return (
         <div className="fixed top-[60px] right-2 md:right-4 z-50 w-full max-w-[95vw] md:w-[600px] max-h-[85vh] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col text-slate-300 text-xs font-mono overflow-hidden">
@@ -76,23 +35,23 @@ export const TracePopover: React.FC<Props> = ({ processState, onClose }) => {
 
              {/* Tabs */}
              <div className="flex bg-slate-800/50 border-b border-slate-700 shrink-0">
-                 <button 
+                 <button
                     onClick={() => setActiveTab('log')}
                     className={`flex-1 py-2 text-center transition-colors ${activeTab === 'log' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                  >
                     Logs
                  </button>
-                 <button 
-                    onClick={() => setActiveTab('strategy')}
-                    className={`flex-1 py-2 text-center transition-colors ${activeTab === 'strategy' ? 'bg-slate-700 text-yellow-400' : 'text-slate-400 hover:text-slate-200'}`}
+                 <button
+                    onClick={() => setActiveTab('prompts')}
+                    className={`flex-1 py-2 text-center transition-colors ${activeTab === 'prompts' ? 'bg-slate-700 text-cyan-400' : 'text-slate-400 hover:text-slate-200'}`}
                  >
-                    Strategy Input
+                    Model Prompts
                  </button>
-                 <button 
-                    onClick={() => setActiveTab('content')}
-                    className={`flex-1 py-2 text-center transition-colors ${activeTab === 'content' ? 'bg-slate-700 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
+                 <button
+                    onClick={() => setActiveTab('interactions')}
+                    className={`flex-1 py-2 text-center transition-colors ${activeTab === 'interactions' ? 'bg-slate-700 text-pink-400' : 'text-slate-400 hover:text-slate-200'}`}
                  >
-                    Content Input
+                    User Interactions
                  </button>
              </div>
 
@@ -109,36 +68,168 @@ export const TracePopover: React.FC<Props> = ({ processState, onClose }) => {
                          ))}
                      </div>
                  )}
-                 {activeTab === 'strategy' && (
-                      <div className="leading-relaxed p-4">
-                          <div className="text-slate-500 mb-2 font-bold">[Fixed Preamble]</div>
-                          <div className="text-slate-400 whitespace-pre-wrap mb-4 bg-black/20 p-2 rounded max-h-40 overflow-y-auto">{FIXED_STRATEGY_PREAMBLE}</div>
-                          
-                          <div className="text-indigo-400 mb-2 font-bold">[Injected History]</div>
-                          {renderHistoryVisualization(processState.currentDebugInfo?.rawInteractions)}
-                          
-                          <div className="text-yellow-400 mb-2 font-bold mt-4">[Task Prompt]</div>
-                          <div className="text-yellow-100/90 whitespace-pre-wrap bg-yellow-900/10 p-2 rounded border border-yellow-900/30">
-                              {processState.currentDebugInfo?.strategyPrompt 
-                                ? processState.currentDebugInfo.strategyPrompt.split(FIXED_STRATEGY_PREAMBLE.split('\n')[0])[1] || "..." 
-                                : "Waiting..."}
-                          </div>
+                 {activeTab === 'prompts' && (
+                      <div className="leading-relaxed p-4 space-y-4">
+                          {!processState.currentDebugInfo?.unified_pipeline && (
+                              <div className="text-slate-500 italic text-center py-8">
+                                  等待推荐流程执行...
+                              </div>
+                          )}
+
+                          {processState.currentDebugInfo?.unified_pipeline && (
+                              <>
+                                  {/* Stage 1: User Profile + Search Decision */}
+                                  <div className="border border-blue-700/50 rounded-lg bg-blue-900/10">
+                                      <div className="bg-blue-800/30 px-3 py-2 border-b border-blue-700/50">
+                                          <span className="text-blue-300 font-bold">Stage 1: User Profile + Search Decision</span>
+                                      </div>
+                                      <div className="p-3 space-y-3">
+                                          <div>
+                                              <div className="text-[10px] text-slate-400 mb-1">Prompt:</div>
+                                              <div className="text-[10px] text-blue-100/90 whitespace-pre-wrap bg-black/30 p-2 rounded border border-blue-900/30 max-h-48 overflow-y-auto font-mono">
+                                                  {processState.currentDebugInfo.unified_pipeline.stage1_prompt || "Waiting..."}
+                                              </div>
+                                          </div>
+                                          {processState.currentDebugInfo.unified_pipeline.stage1_output && (
+                                              <div>
+                                                  <div className="text-[10px] text-green-400 mb-1">Output:</div>
+                                                  <div className="text-[10px] text-green-100/90 whitespace-pre-wrap bg-green-950/30 p-2 rounded border border-green-900/30 max-h-48 overflow-y-auto font-mono">
+                                                      {JSON.stringify(processState.currentDebugInfo.unified_pipeline.stage1_output, null, 2)}
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+
+                                  {/* Stage 2: Recall */}
+                                  <div className="border border-purple-700/50 rounded-lg bg-purple-900/10">
+                                      <div className="bg-purple-800/30 px-3 py-2 border-b border-purple-700/50">
+                                          <span className="text-purple-300 font-bold">Stage 2: Recall</span>
+                                      </div>
+                                      <div className="p-3 space-y-3">
+                                          <div>
+                                              <div className="text-[10px] text-slate-400 mb-1">Prompt:</div>
+                                              <div className="text-[10px] text-purple-100/90 whitespace-pre-wrap bg-black/30 p-2 rounded border border-purple-900/30 max-h-48 overflow-y-auto font-mono">
+                                                  {processState.currentDebugInfo.unified_pipeline.stage2_prompt || "Waiting..."}
+                                              </div>
+                                          </div>
+                                          {processState.currentDebugInfo.unified_pipeline.stage2_output && (
+                                              <div>
+                                                  <div className="text-[10px] text-green-400 mb-1">Output:</div>
+                                                  <div className="text-[10px] text-green-100/90 whitespace-pre-wrap bg-green-950/30 p-2 rounded border border-green-900/30 max-h-48 overflow-y-auto font-mono">
+                                                      {JSON.stringify(processState.currentDebugInfo.unified_pipeline.stage2_output, null, 2)}
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+
+                                  {/* Stage 3: Quality Filter */}
+                                  <div className="border border-yellow-700/50 rounded-lg bg-yellow-900/10">
+                                      <div className="bg-yellow-800/30 px-3 py-2 border-b border-yellow-700/50">
+                                          <span className="text-yellow-300 font-bold">Stage 3: Quality Filter</span>
+                                      </div>
+                                      <div className="p-3 space-y-3">
+                                          <div>
+                                              <div className="text-[10px] text-slate-400 mb-1">Prompt:</div>
+                                              <div className="text-[10px] text-yellow-100/90 whitespace-pre-wrap bg-black/30 p-2 rounded border border-yellow-900/30 max-h-48 overflow-y-auto font-mono">
+                                                  {processState.currentDebugInfo.unified_pipeline.stage3_prompt || "Waiting..."}
+                                              </div>
+                                          </div>
+                                          {processState.currentDebugInfo.unified_pipeline.stage3_output && (
+                                              <div>
+                                                  <div className="text-[10px] text-green-400 mb-1">Output:</div>
+                                                  <div className="text-[10px] text-green-100/90 whitespace-pre-wrap bg-green-950/30 p-2 rounded border border-green-900/30 max-h-48 overflow-y-auto font-mono">
+                                                      {JSON.stringify(processState.currentDebugInfo.unified_pipeline.stage3_output, null, 2)}
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+
+                                  {/* Stage 4: Fine Ranking */}
+                                  <div className="border border-emerald-700/50 rounded-lg bg-emerald-900/10">
+                                      <div className="bg-emerald-800/30 px-3 py-2 border-b border-emerald-700/50">
+                                          <span className="text-emerald-300 font-bold">Stage 4: Fine Ranking</span>
+                                      </div>
+                                      <div className="p-3 space-y-3">
+                                          <div>
+                                              <div className="text-[10px] text-slate-400 mb-1">Prompt:</div>
+                                              <div className="text-[10px] text-emerald-100/90 whitespace-pre-wrap bg-black/30 p-2 rounded border border-emerald-900/30 max-h-48 overflow-y-auto font-mono">
+                                                  {processState.currentDebugInfo.unified_pipeline.stage4_prompt || "Waiting..."}
+                                              </div>
+                                          </div>
+                                          {processState.currentDebugInfo.unified_pipeline.stage4_output && (
+                                              <div>
+                                                  <div className="text-[10px] text-green-400 mb-1">Output:</div>
+                                                  <div className="text-[10px] text-green-100/90 whitespace-pre-wrap bg-green-950/30 p-2 rounded border border-green-900/30 max-h-48 overflow-y-auto font-mono">
+                                                      {JSON.stringify(processState.currentDebugInfo.unified_pipeline.stage4_output, null, 2)}
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+                              </>
+                          )}
                       </div>
                  )}
-                 {activeTab === 'content' && (
-                      <div className="leading-relaxed p-4">
-                          <div className="text-slate-500 mb-2 font-bold">[Fixed Preamble]</div>
-                          <div className="text-slate-400 whitespace-pre-wrap mb-4 bg-black/20 p-2 rounded max-h-40 overflow-y-auto">{FIXED_CONTENT_PREAMBLE}</div>
+                 {activeTab === 'interactions' && (
+                      <div className="leading-relaxed p-4 space-y-2">
+                          {!processState.currentDebugInfo?.rawInteractions || processState.currentDebugInfo.rawInteractions.length === 0 ? (
+                              <div className="text-slate-500 italic text-center py-8">
+                                  暂无交互记录...
+                              </div>
+                          ) : (
+                              <>
+                                  <div className="text-slate-400 mb-3 text-[10px]">
+                                      共 {processState.currentDebugInfo.rawInteractions.length} 条交互记录
+                                  </div>
+                                  {processState.currentDebugInfo.rawInteractions.map((interaction: any, index: number) => {
+                                      const isExpanded = expandedInteractionIndex === index;
+                                      const action = interaction.clicked ? 'CLICKED' : 'SKIPPED';
+                                      const actionColor = interaction.clicked ? 'text-green-400' : 'text-slate-500';
 
-                          <div className="text-indigo-400 mb-2 font-bold">[Injected History]</div>
-                          {renderHistoryVisualization(processState.currentDebugInfo?.rawInteractions)}
+                                      return (
+                                          <div key={index} className="border border-slate-700 rounded-lg bg-slate-800/30 overflow-hidden">
+                                              {/* Summary Line (Clickable) */}
+                                              <div
+                                                  onClick={() => setExpandedInteractionIndex(isExpanded ? null : index)}
+                                                  className="p-2 cursor-pointer hover:bg-slate-700/50 transition-colors flex items-center justify-between"
+                                              >
+                                                  <div className="flex-1 flex items-center gap-2 text-[10px]">
+                                                      <span className="text-slate-500">#{index + 1}</span>
+                                                      <span className={`font-bold ${actionColor}`}>{action}</span>
+                                                      <span className="text-slate-300 truncate max-w-[200px]">
+                                                          {interaction.articleContext?.title || 'Unknown'}
+                                                      </span>
+                                                      {interaction.clicked && (
+                                                          <>
+                                                              <span className="text-slate-500">|</span>
+                                                              <span className="text-cyan-400">{interaction.dwellTime}s</span>
+                                                              <span className="text-purple-400">{Math.round(interaction.scrollDepth * 100)}%</span>
+                                                          </>
+                                                      )}
+                                                      {interaction.liked && <span className="text-pink-400">♥</span>}
+                                                      {interaction.comment && <span className="text-yellow-400">💬</span>}
+                                                  </div>
+                                                  <span className="text-slate-500 text-[10px]">
+                                                      {isExpanded ? '▼' : '▶'}
+                                                  </span>
+                                              </div>
 
-                          <div className="text-emerald-400 mb-2 font-bold mt-4">[Task Prompt]</div>
-                          <div className="text-emerald-100/90 whitespace-pre-wrap bg-emerald-900/10 p-2 rounded border border-emerald-900/30">
-                              {processState.currentDebugInfo?.contentPrompt 
-                                ? processState.currentDebugInfo.contentPrompt.split(FIXED_CONTENT_PREAMBLE.split('\n')[0])[1] || "..." 
-                                : "Waiting..."}
-                          </div>
+                                              {/* Expanded JSON Details */}
+                                              {isExpanded && (
+                                                  <div className="border-t border-slate-700 p-2 bg-black/20">
+                                                      <pre className="text-[9px] text-slate-300 whitespace-pre-wrap overflow-x-auto">
+                                                          {JSON.stringify(interaction, null, 2)}
+                                                      </pre>
+                                                  </div>
+                                              )}
+                                          </div>
+                                      );
+                                  })}
+                              </>
+                          )}
                       </div>
                  )}
              </div>

@@ -8,8 +8,8 @@ import { HistoryModal } from './components/HistoryModal';
 import { ModelSelector, MODELS } from './components/ModelSelector';
 import { TracePopover } from './components/TracePopover';
 import { ConfigModal } from './components/ConfigModal';
-import { OnboardingWizard } from './components/OnboardingWizard';
-import { crawlAndImportByKeywords } from './services/autoCrawlService';
+import { ConfirmModal } from './components/ConfirmModal';
+import { ExperimentCreationModal } from './components/ExperimentCreationModal';
 
 const INITIAL_PROCESS_STATE: ProcessState = {
     isProcessing: false,
@@ -26,11 +26,10 @@ const App: React.FC = () => {
   const [showTrace, setShowTrace] = useState(false);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id); 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
-  const [configProps, setConfigProps] = useState<{strategy: string, content: string} | null>(null);
+  const [showConfigForExperiment, setShowConfigForExperiment] = useState<Experiment | null>(null);
   const [experimentStates, setExperimentStates] = useState<Record<string, ProcessState>>({});
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [onboardingLogs, setOnboardingLogs] = useState<string[]>([]);
-  const [isOnboardingProcessing, setIsOnboardingProcessing] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showExperimentCreation, setShowExperimentCreation] = useState(false);
 
   const activeProcessState = currentExperiment ? (experimentStates[currentExperiment.id] || INITIAL_PROCESS_STATE) : INITIAL_PROCESS_STATE;
   const updateExperimentState = (expId: string, update: Partial<ProcessState> | ((prev: ProcessState) => Partial<ProcessState>)) => {
@@ -49,68 +48,25 @@ const App: React.FC = () => {
   
   const handleCreateExperiment = async () => {
       if (!currentUser) return;
-      setShowOnboarding(true);
+      setShowExperimentCreation(true);
   };
 
-  const handleOnboardingComplete = async (profile: UserProfile) => {
-      if (!currentUser) return;
-      setShowOnboarding(false);
-      setIsOnboardingProcessing(true);
-      setOnboardingLogs(['开始实验初始化流程...']);
+  const handleExperimentCreate = async (config: {
+    name: string;
+    mode: 'solo' | 'community';
+  }) => {
+    if (!currentUser) return;
 
-      const addLog = (msg: string) => {
-          setOnboardingLogs(prev => [...prev, msg]);
-      };
-
-      try {
-          addLog('1. 根据用户偏好生成搜索关键词...');
-          const keywordRes = await fetch('/api/ai/generate-keywords', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ profile, model: selectedModel })
-          });
-          if (!keywordRes.ok) {
-              const err = await keywordRes.json();
-              throw new Error(err.error || '关键词生成失败');
-          }
-          const keywordResult = await keywordRes.json();
-          const keywords = keywordResult.keywords || [];
-          addLog(`   生成关键词: ${keywords.join(', ')}`);
-          addLog(`   推理: ${keywordResult.reasoning || ''}`);
-          
-          if (keywords.length === 0) {
-              throw new Error('未能生成有效关键词');
-          }
-
-          addLog('2. 从小红书搜索并导入内容到公共库...');
-          const articles = await crawlAndImportByKeywords(
-              keywords, 
-              3, 
-              undefined,
-              addLog
-          );
-          addLog(`   成功导入 ${articles.length} 篇内容`);
-
-          addLog('3. 创建新实验...');
-          const { experiment } = await db.createExperiment(currentUser.id);
-          setCurrentExperiment(experiment);
-
-          addLog('实验初始化完成！');
-          setView('feed');
-      } catch (e: any) {
-          addLog(`错误: ${e.message}`);
-      } finally {
-          setIsOnboardingProcessing(false);
-      }
-  };
-
-  const handleOnboardingSkip = async () => {
-      if (!currentUser) return;
-      setShowOnboarding(false);
-      const { experiment } = await db.createExperiment(currentUser.id);
+    try {
+      const { experiment } = await db.createExperiment(currentUser.id, config);
       setCurrentExperiment(experiment);
+      setShowExperimentCreation(false);
       setView('feed');
+    } catch (e: any) {
+      alert('创建实验失败: ' + e.message);
+    }
   };
+
 
   const handleSelectHistory = (exp: Experiment) => {
     setCurrentExperiment(exp);
@@ -119,29 +75,26 @@ const App: React.FC = () => {
   };
 
   const handleOpenConfig = async () => {
-      if (currentExperiment) {
-          setConfigProps({
-              strategy: currentExperiment.customStrategyPrompt || '',
-              content: currentExperiment.customContentPrompt || ''
-          });
-      } else {
-          const global = await db.getGlobalConfig();
-          setConfigProps({
-              strategy: global.strategyPrompt,
-              content: global.contentPrompt
-          });
-      }
+      setShowConfigForExperiment(currentExperiment || null);
       setShowConfig(true);
   };
 
-  const handleSaveConfig = (strategy: string, content: string) => {
+  const handleSaveConfig = (updates: Partial<Experiment>) => {
       if (currentExperiment) {
-          setCurrentExperiment({ ...currentExperiment, customStrategyPrompt: strategy, customContentPrompt: content });
+          setCurrentExperiment({
+            ...currentExperiment,
+            ...updates
+          });
       }
   };
 
   const handleReset = () => {
-      if(confirm('Reset DB?')) { /* Requires backend reset endpoint usually, ignoring for now */ }
+      setShowResetConfirm(true);
+  }
+
+  const handleConfirmReset = () => {
+      setShowResetConfirm(false);
+      /* Requires backend reset endpoint usually, ignoring for now */
   }
 
   const handleLogout = () => {
@@ -167,12 +120,12 @@ const App: React.FC = () => {
                 {currentExperiment ? <span className="text-xs font-mono text-emerald-100 truncate">{currentExperiment.name}</span> : <span className="text-xs text-slate-400">选择实验...</span>}
              </button>
              <button onClick={handleOpenConfig} className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white">⚙️</button>
-             <button onClick={() => setShowTrace(!showTrace)} className={`p-1.5 rounded hover:bg-slate-700 ${activeProcessState.isProcessing ? 'text-emerald-400' : 'text-slate-400'}`}>⚡</button>
              <button onClick={handleCreateExperiment} className="ml-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold">+</button>
           </div>
         </div>
         <div className="hidden md:flex gap-4 text-sm items-center">
            <ModelSelector selectedModel={selectedModel} onSelect={setSelectedModel} />
+           <button onClick={() => setShowTrace(!showTrace)} className={`p-1.5 rounded hover:bg-slate-700 ${activeProcessState.isProcessing ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} title="Execution Trace">⚡</button>
            <button onClick={() => setView('feed')} className={`hover:text-white ${view === 'feed' ? 'text-white font-bold border-b-2 border-indigo-500' : 'text-slate-400'}`}>Feed</button>
            <button onClick={() => setView('admin')} className={`hover:text-white ${view === 'admin' ? 'text-white font-bold border-b-2 border-indigo-500' : 'text-slate-400'}`}>后台</button>
            <button onClick={handleLogout} className="text-slate-500 hover:text-white ml-2">Exit</button>
@@ -184,13 +137,13 @@ const App: React.FC = () => {
 
       <div className="flex-1 overflow-hidden relative">
         {view === 'admin' ? (
-          <div className="h-full overflow-y-auto bg-slate-50"><Admin user={currentUser} onStartExperiment={handleCreateExperiment} /></div>
+          <div className="h-full overflow-y-auto bg-slate-50"><Admin key={currentExperiment?.id || 'no-experiment'} user={currentUser} experiment={currentExperiment} onStartExperiment={handleCreateExperiment} /></div>
         ) : (
             <div className="h-full bg-slate-100">
               {currentExperiment ? (
-                  <Feed 
+                  <Feed
                     key={currentExperiment.id}
-                    user={currentUser} 
+                    user={currentUser}
                     experiment={currentExperiment}
                     selectedModel={selectedModel}
                     processState={activeProcessState}
@@ -199,6 +152,7 @@ const App: React.FC = () => {
                     onProcessLog={(msg) => updateExperimentState(currentExperiment.id, prev => ({ logs: [...prev.logs, msg] }))}
                     onProcessUpdate={(info) => updateExperimentState(currentExperiment.id, prev => ({ currentDebugInfo: { ...prev.currentDebugInfo, ...info } }))}
                     onProcessEnd={() => updateExperimentState(currentExperiment.id, { isProcessing: false })}
+                    onShowTrace={setShowTrace}
                   />
               ) : (
                   <div className="h-full flex flex-col items-center justify-center text-slate-400 p-10 text-center">
@@ -210,31 +164,45 @@ const App: React.FC = () => {
         )}
       </div>
       
-      {showHistory && currentUser && <HistoryModal user={currentUser} onClose={() => setShowHistory(false)} onSelectExperiment={handleSelectHistory} />}
-      {showConfig && configProps && <ConfigModal initialStrategyPrompt={configProps.strategy} initialContentPrompt={configProps.content} experimentId={currentExperiment?.id} onClose={() => setShowConfig(false)} onSave={handleSaveConfig} />}
-      
-      {showOnboarding && currentUser && (
-        <OnboardingWizard 
-          userId={currentUser.id} 
-          onComplete={handleOnboardingComplete}
-          onSkip={handleOnboardingSkip}
+      {showHistory && currentUser && (
+        <HistoryModal
+          user={currentUser}
+          currentExperimentId={currentExperiment?.id}
+          onClose={() => setShowHistory(false)}
+          onSelectExperiment={handleSelectHistory}
+          onExperimentDeleted={(deletedId) => {
+            // 如果删除的是当前实验，清空当前实验
+            if (currentExperiment?.id === deletedId) {
+              setCurrentExperiment(null);
+            }
+          }}
+        />
+      )}
+      {showConfig && (
+        <ConfigModal
+          experiment={showConfigForExperiment || undefined}
+          onClose={() => setShowConfig(false)}
+          onSave={handleSaveConfig}
         />
       )}
 
-      {isOnboardingProcessing && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-xl p-6 max-w-lg w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
-              <h2 className="text-white font-bold text-lg">正在初始化实验...</h2>
-            </div>
-            <div className="bg-black/50 rounded-lg p-4 max-h-64 overflow-y-auto font-mono text-xs text-slate-300 space-y-1">
-              {onboardingLogs.map((log, i) => (
-                <div key={i} className={log.startsWith('错误') ? 'text-red-400' : ''}>{log}</div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {showResetConfirm && (
+        <ConfirmModal
+          message="确定要重置数据库吗？此操作不可恢复。"
+          title="重置数据库"
+          confirmText="确定重置"
+          cancelText="取消"
+          onConfirm={handleConfirmReset}
+          onCancel={() => setShowResetConfirm(false)}
+        />
+      )}
+
+      {showExperimentCreation && currentUser && (
+        <ExperimentCreationModal
+          userId={currentUser.id}
+          onClose={() => setShowExperimentCreation(false)}
+          onCreate={handleExperimentCreate}
+        />
       )}
     </div>
   );

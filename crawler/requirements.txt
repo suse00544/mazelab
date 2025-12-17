@@ -4,3 +4,6 @@ playwright
 httpx
 tenacity
 pydantic
+wordcloud
+jieba
+pillow

@@ -1,8 +1,12 @@
+const path = require('path');
+
+// 加载环境变量
+require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
+
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const fs = require('fs');
-const fetch = require('node-fetch'); 
+const fetch = require('node-fetch');
 const { run, all, get } = require('./database');
 const { v4: uuidv4 } = require('uuid');
 
@@ -33,20 +37,101 @@ app.use('/uploads', express.static(uploadsDir));
 
 // --- API ROUTES ---
 
-// 1. ARTICLES
+// 1. ARTICLES - 完全按照小红书爬虫字段
 app.get('/api/articles', async (req, res) => {
     try {
-        const rows = await all('SELECT * FROM articles ORDER BY created_at DESC');
-        const articles = rows.map(r => ({
-            ...r,
-            tags: JSON.parse(r.tags || '[]'),
-            topics: r.topics ? JSON.parse(r.topics) : [],
-            author: r.author ? JSON.parse(r.author) : null,
-            media: r.media ? JSON.parse(r.media) : [],
-            metrics: r.metrics ? JSON.parse(r.metrics) : null,
-            crawl_context: r.crawl_context ? JSON.parse(r.crawl_context) : null,
-            isPublic: !!r.isPublic
-        }));
+        const { library_type, owner_id, contributor, experiment_id } = req.query;
+
+        console.log('[Server] GET /api/articles query params:', { library_type, owner_id, experiment_id });
+
+        // 构建WHERE子句
+        let whereClause = '';
+        let params = [];
+
+        if (library_type) {
+            whereClause = 'WHERE library_type = ?';
+            params.push(library_type);
+
+            // 如果是个人库，需要指定owner_id和experiment_id（强制要求）
+            if (library_type === 'personal' && owner_id) {
+                whereClause += ' AND owner_id = ?';
+                params.push(owner_id);
+
+                // Personal库必须指定experiment_id，否则返回空
+                if (experiment_id && experiment_id !== 'undefined' && experiment_id !== 'null') {
+                    whereClause += ' AND experiment_id = ?';
+                    params.push(experiment_id);
+                } else {
+                    // 如果没有指定experiment_id，添加一个永远为false的条件，返回空结果
+                    console.log('[Server] No valid experiment_id provided, returning empty result');
+                    whereClause += ' AND 1 = 0';
+                }
+            }
+
+            // 如果是社区库，可以按贡献者过滤
+            if (library_type === 'community' && contributor) {
+                whereClause += ' AND owner_id = ?';
+                params.push(contributor);
+            }
+        } else if (owner_id) {
+            // 只指定owner_id，查询该用户的所有内容
+            whereClause = 'WHERE owner_id = ?';
+            params.push(owner_id);
+        }
+
+        const sql = `SELECT * FROM articles ${whereClause} ORDER BY created_at DESC`;
+        console.log('[Server] SQL:', sql, 'Params:', params);
+        const rows = await all(sql, params);
+        console.log('[Server] Found', rows.length, 'articles');
+
+        const articles = rows.map(r => {
+            // 解析 JSON 字段
+            const images = r.images ? JSON.parse(r.images) : [];
+            const tag_list = r.tag_list ? JSON.parse(r.tag_list) : [];
+            const tags = r.tags ? JSON.parse(r.tags) : [];
+
+            // 构建 media 数组（前端 ContentDetailCard 需要）
+            let media = r.media ? JSON.parse(r.media) : [];
+            if (media.length === 0 && images.length > 0) {
+                media = images.map((url, index) => ({
+                    type: 'image',
+                    url_local: url,
+                    order: index
+                }));
+            }
+
+            // 构建 metrics 对象（前端 ContentDetailCard 需要）
+            const metrics = {
+                likes: parseInt(r.liked_count) || 0,
+                favorites: parseInt(r.collected_count) || 0,
+                comments: parseInt(r.comment_count) || 0,
+                shares: parseInt(r.share_count) || 0
+            };
+
+            // 字段映射：新字段 -> 旧字段（兼容前端）
+            return {
+                ...r,
+                images,
+                tag_list,
+                tags: tags.length > 0 ? tags : tag_list,
+                media,
+                metrics,
+                // 封面图映射
+                imageUrl: r.imageUrl || r.cover || (images.length > 0 ? images[0] : null),
+                cover_url: r.cover_url || r.cover,
+                // 内容映射
+                content: r.content || r.desc || '',
+                summary: r.summary || (r.desc ? r.desc.substring(0, 100) : ''),
+                // 作者映射
+                author: r.author ? (typeof r.author === 'string' ? JSON.parse(r.author) : r.author) : {
+                    id: r.user_id || r.ownerId || '',
+                    name: r.user_nickname || '',
+                    avatar: r.user_avatar || ''
+                },
+                // 时间映射
+                publish_time: r.time ? r.time : r.created_at
+            };
+        });
         res.json(articles);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -56,42 +141,98 @@ app.get('/api/articles', async (req, res) => {
 app.post('/api/articles', async (req, res) => {
     const a = req.body;
     try {
-        await run(`INSERT OR REPLACE INTO articles 
-            (id, source, source_item_id, original_url, title, subtitle, summary, content, content_plain,
-             author, media, imageUrl, category, tags, topics, tone, estimatedReadTime, language,
-             metrics, created_at, publish_time, crawl_context, status, isPublic, ownerId, deletedAt) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                a.id, 
-                a.source || 'manual',
-                a.source_item_id || null,
-                a.original_url || null,
-                a.title, 
-                a.subtitle || null,
-                a.summary, 
-                a.content, 
-                a.content_plain || null,
-                a.author ? JSON.stringify(a.author) : null,
-                a.media ? JSON.stringify(a.media) : null,
-                a.imageUrl || null,
-                a.category, 
-                JSON.stringify(a.tags || []),
-                a.topics ? JSON.stringify(a.topics) : null,
-                a.tone || 'Casual',
-                a.estimatedReadTime || 0,
-                a.language || 'zh',
-                a.metrics ? JSON.stringify(a.metrics) : null,
-                a.created_at || Date.now(),
-                a.publish_time || null,
-                a.crawl_context ? JSON.stringify(a.crawl_context) : null,
-                a.status || 'active',
-                a.isPublic ? 1 : 0, 
-                a.ownerId || null,
-                a.deletedAt || null
-            ]
+        console.log('[Server] 接收到的文章数据 keys:', Object.keys(a || {}));
+
+        // 构建参数数组，支持完整的多源内容字段
+        const params = [
+            // 核心字段
+            a.id || `article-${Date.now()}`,
+            a.source || 'manual',
+            a.source_item_id || '',
+            a.original_url || '',
+
+            // 内容字段（通用）
+            a.title || '',
+            a.content || '',
+            a.content_plain || '',
+            a.summary || '',
+
+            // 作者信息（通用 + 平台特定）
+            JSON.stringify(a.author || {}),
+            a.user_id || '',
+            a.user_nickname || '',
+            a.user_avatar || '',
+
+            // 媒体资源
+            JSON.stringify(Array.isArray(a.media) ? a.media : []),
+            a.imageUrl || '',
+            typeof a.cover === 'string' ? a.cover : '',
+            typeof a.cover_url === 'string' ? a.cover_url : '',
+            JSON.stringify(Array.isArray(a.images) ? a.images : []),
+            a.video_url || '',
+
+            // 平台特定字段
+            a.xsec_token || '',
+            a.note_type || '',
+            a.desc || '',
+            a.type || 'normal',
+
+            // 统计数据
+            a.liked_count || '0',
+            a.collected_count || '0',
+            a.comment_count || '0',
+            a.share_count || '0',
+
+            // 分类和标签
+            a.category || '',
+            JSON.stringify(Array.isArray(a.tags) ? a.tags : []),
+            JSON.stringify(Array.isArray(a.topics) ? a.topics : []),
+            JSON.stringify(Array.isArray(a.tag_list) ? a.tag_list : []),
+
+            // 其他元数据
+            a.tone || 'Casual',
+            a.estimatedReadTime || 60,
+            a.language || 'zh',
+
+            // 时间字段
+            a.time || 0,
+            a.publish_time || a.created_at || Date.now(),
+            a.created_at || Date.now(),
+            Date.now(), // updated_at
+
+            // 库管理字段
+            a.library_type || 'personal',
+            a.owner_id || null,
+            a.experiment_id || null,
+            a.isPublic ? 1 : 0,
+            a.status || 'active',
+            a.deletedAt || null
+        ];
+
+        console.log('[Server] 参数数组长度:', params.length);
+
+        // 完整的 INSERT 语句，支持所有字段
+        await run(`INSERT OR REPLACE INTO articles
+            (id, source, source_item_id, original_url,
+             title, content, content_plain, summary,
+             author, user_id, user_nickname, user_avatar,
+             media, imageUrl, cover, cover_url, images, video_url,
+             xsec_token, note_type, desc, type,
+             liked_count, collected_count, comment_count, share_count,
+             category, tags, topics, tag_list,
+             tone, estimatedReadTime, language,
+             time, publish_time, created_at, updated_at,
+             library_type, owner_id, experiment_id, isPublic, status, deletedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            params
         );
+        console.log('[Server] ✅ 文章保存成功:', a.id);
         res.json({ success: true });
     } catch (e) {
+        console.error('[Server] ❌ Save article error:', e.message);
+        console.error('[Server] Error stack:', e.stack);
+        console.error('[Server] Article data keys:', Object.keys(a || {}));
+        console.error('[Server] Article data (first 500 chars):', JSON.stringify(a || {}).substring(0, 500));
         res.status(500).json({ error: e.message });
     }
 });
@@ -108,6 +249,22 @@ app.post('/api/articles/delete', async (req, res) => {
 app.post('/api/articles/restore', async (req, res) => {
     try {
         await run('UPDATE articles SET deletedAt = NULL WHERE id = ?', [req.body.id]);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/articles/clear-personal', async (req, res) => {
+    try {
+        const { userId, experimentId } = req.body;
+        if (!userId || !experimentId) {
+            return res.status(400).json({ error: 'userId and experimentId are required' });
+        }
+        await run(
+            'DELETE FROM articles WHERE library_type = ? AND owner_id = ? AND experiment_id = ?',
+            ['personal', userId, experimentId]
+        );
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -155,7 +312,11 @@ app.get('/api/experiments', async (req, res) => {
     try {
         const { userId } = req.query;
         const rows = await all('SELECT * FROM experiments WHERE userId = ? ORDER BY startTimestamp DESC', [userId]);
-        res.json(rows.map(r => ({ ...r, active: !!r.active })));
+        res.json(rows.map(r => ({
+            ...r,
+            active: !!r.active,
+            recommendation_config: r.recommendation_config ? JSON.parse(r.recommendation_config) : null
+        })));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -167,12 +328,47 @@ app.post('/api/experiments', async (req, res) => {
         if (e.active) {
             await run('UPDATE experiments SET active = 0 WHERE userId = ?', [e.userId]);
         }
-        await run(`INSERT OR REPLACE INTO experiments (id, userId, startTimestamp, name, active, customStrategyPrompt, customContentPrompt)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [e.id, e.userId, e.startTimestamp, e.name, e.active ? 1 : 0, e.customStrategyPrompt, e.customContentPrompt]
+        await run(`INSERT OR REPLACE INTO experiments (
+            id, userId, startTimestamp, name, active,
+            customStrategyPrompt, customContentPrompt,
+            customKeywordColdStartPrompt, customKeywordInteractionPrompt,
+            mode, userDescription,
+            stage1_custom_prompt, stage2_custom_prompt, stage3_custom_prompt, stage4_custom_prompt,
+            recommendation_config
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                e.id, e.userId, e.startTimestamp, e.name, e.active ? 1 : 0,
+                e.customStrategyPrompt, e.customContentPrompt,
+                e.customKeywordColdStartPrompt || null, e.customKeywordInteractionPrompt || null,
+                e.mode || 'solo', e.userDescription || null,
+                e.stage1_custom_prompt || null, e.stage2_custom_prompt || null,
+                e.stage3_custom_prompt || null, e.stage4_custom_prompt || null,
+                e.recommendation_config ? JSON.stringify(e.recommendation_config) : null
+            ]
         );
         res.json({ success: true });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 删除实验（同时删除关联的个人库文章、会话、交互记录）
+app.delete('/api/experiments/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // 删除该实验的个人库文章
+        await run('DELETE FROM articles WHERE experiment_id = ?', [id]);
+        // 删除该实验的会话记录
+        await run('DELETE FROM sessions WHERE experimentId = ?', [id]);
+        // 删除该实验的交互记录
+        await run('DELETE FROM interactions WHERE experimentId = ?', [id]);
+        // 删除实验本身
+        await run('DELETE FROM experiments WHERE id = ?', [id]);
+
+        console.log('[Server] Deleted experiment and related data:', id);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[Server] Delete experiment error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -191,7 +387,49 @@ app.get('/api/sessions', async (req, res) => {
             const articles = ids.map(id => {
                 const a = artMap.get(id);
                 if (!a) return null;
-                return { ...a, tags: JSON.parse(a.tags||'[]'), isPublic: !!a.isPublic };
+
+                // 解析 JSON 字段（与 /api/articles 保持一致）
+                const images = a.images ? JSON.parse(a.images) : [];
+                const tag_list = a.tag_list ? JSON.parse(a.tag_list) : [];
+                const tags = a.tags ? JSON.parse(a.tags) : [];
+
+                // 构建 media 数组
+                let media = a.media ? JSON.parse(a.media) : [];
+                if (media.length === 0 && images.length > 0) {
+                    media = images.map((url, index) => ({
+                        type: 'image',
+                        url_local: url,
+                        order: index
+                    }));
+                }
+
+                // 构建 metrics 对象
+                const metrics = {
+                    likes: parseInt(a.liked_count) || 0,
+                    favorites: parseInt(a.collected_count) || 0,
+                    comments: parseInt(a.comment_count) || 0,
+                    shares: parseInt(a.share_count) || 0
+                };
+
+                return {
+                    ...a,
+                    images,
+                    tag_list,
+                    tags: tags.length > 0 ? tags : tag_list,
+                    media,
+                    metrics,
+                    imageUrl: a.imageUrl || a.cover || (images.length > 0 ? images[0] : null),
+                    cover_url: a.cover_url || a.cover,
+                    content: a.content || a.desc || '',
+                    summary: a.summary || (a.desc ? a.desc.substring(0, 100) : ''),
+                    author: a.author ? (typeof a.author === 'string' ? JSON.parse(a.author) : a.author) : {
+                        id: a.user_id || a.ownerId || '',
+                        name: a.user_nickname || '',
+                        avatar: a.user_avatar || ''
+                    },
+                    publish_time: a.time ? a.time : a.created_at,
+                    isPublic: !!a.isPublic
+                };
             }).filter(Boolean);
 
             return {
@@ -596,88 +834,6 @@ app.post('/api/jina/search', async (req, res) => {
     }
 });
 
-// --- MCP PROXY ENDPOINTS (Streamable HTTP Transport 2025-03-26) ---
-
-// POST proxy for MCP JSON-RPC requests
-app.post('/api/mcp/proxy', async (req, res) => {
-    const { targetUrl, sessionId, payload } = req.body;
-    
-    if (!targetUrl) {
-        return res.status(400).json({ error: 'targetUrl required' });
-    }
-
-    console.log(`[MCP Proxy] POST to: ${targetUrl}, method: ${payload?.method}`);
-
-    try {
-        const headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/event-stream',
-            'ngrok-skip-browser-warning': 'true'
-        };
-        
-        if (sessionId) {
-            headers['Mcp-Session-Id'] = sessionId;
-        }
-
-        const response = await fetch(targetUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload)
-        });
-
-        // Forward session ID header if present
-        const mcpSessionId = response.headers.get('mcp-session-id');
-        if (mcpSessionId) {
-            res.setHeader('Mcp-Session-Id', mcpSessionId);
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        
-        if (!response.ok) {
-            const errText = await response.text().catch(() => 'Unknown error');
-            console.error(`[MCP Proxy] Error ${response.status}: ${errText}`);
-            return res.status(response.status).send(errText);
-        }
-
-        if (contentType.includes('text/event-stream')) {
-            // Stream SSE response
-            res.setHeader('Content-Type', 'text/event-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            res.setHeader('Connection', 'keep-alive');
-            res.flushHeaders();
-
-            response.body.on('data', (chunk) => res.write(chunk));
-            response.body.on('end', () => res.end());
-            response.body.on('error', (err) => {
-                console.error('[MCP Proxy] Stream error:', err.message);
-                res.end();
-            });
-            req.on('close', () => response.body.destroy());
-        } else {
-            // JSON response
-            const text = await response.text();
-            res.setHeader('Content-Type', 'application/json');
-            
-            // Include session ID in response body if available
-            if (mcpSessionId) {
-                try {
-                    const json = JSON.parse(text);
-                    json.sessionId = mcpSessionId;
-                    res.send(JSON.stringify(json));
-                } catch (e) {
-                    res.send(text);
-                }
-            } else {
-                res.send(text);
-            }
-        }
-
-    } catch (e) {
-        console.error('[MCP Proxy] Error:', e.message);
-        res.status(500).json({ error: e.message });
-    }
-});
-
 // 构建绕过防盗链的请求头
 function buildImageHeaders(url) {
     const urlObj = new URL(url);
@@ -784,9 +940,10 @@ app.post('/api/image-download', async (req, res) => {
 
 // --- GEMINI AI ENDPOINTS ---
 app.post('/api/ai/generate-keywords', async (req, res) => {
-    const { profile, model } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-    
+    const { profile, model, apiKey: clientApiKey } = req.body;
+    // 优先使用客户端传递的 API key，否则使用环境变量
+    const apiKey = clientApiKey || process.env.GEMINI_API_KEY;
+
     if (!apiKey) {
         return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
     }
@@ -849,6 +1006,31 @@ app.get('/api/xhs/health', async (req, res) => {
     }
 });
 
+// XHS Cookie status check
+app.get('/api/xhs/cookie-status', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/cookie-status`);
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS Clear cookies cache
+app.post('/api/xhs/clear-cookies', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/clear-cookies`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Set XHS cookies
 app.post('/api/xhs/set-cookies', async (req, res) => {
     try {
@@ -872,10 +1054,31 @@ app.post('/api/xhs/search', async (req, res) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(req.body)
         });
-        const data = await response.json();
-        res.json(data);
+        
+        // 检查响应状态
+        if (!response.ok) {
+            const errorText = await response.text();
+            try {
+                const errorJson = JSON.parse(errorText);
+                return res.status(response.status).json({ error: errorJson.detail || errorJson.message || 'Request failed' });
+            } catch {
+                return res.status(response.status).json({ error: errorText || 'Request failed' });
+            }
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            console.log('[Server] XHS Search response:', JSON.stringify(data, null, 2).substring(0, 500));
+            res.json(data);
+        } else {
+            const text = await response.text();
+            console.error('[Server] XHS Search non-JSON response:', text.substring(0, 200));
+            res.status(500).json({ error: 'Invalid response format from crawler service' });
+        }
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        console.error('[Server] XHS Search error:', e);
+        res.status(500).json({ error: e.message || 'Failed to search notes' });
     }
 });
 
@@ -909,10 +1112,155 @@ app.post('/api/xhs/note/from-url', async (req, res) => {
     }
 });
 
-// XHS get comments
+// XHS get comments (支持二级评论)
 app.post('/api/xhs/comments', async (req, res) => {
     try {
         const response = await fetch(`${CRAWLER_URL}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+
+        // 处理 Cookie 失效错误 (401)
+        if (response.status === 401) {
+            const data = await response.json();
+            return res.status(401).json({
+                error: 'COOKIE_EXPIRED',
+                message: data.detail?.message || 'Cookie已失效，请重新设置'
+            });
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            return res.status(response.status).json({ error: errorText || 'Request failed' });
+        }
+
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS get notes by IDs (批量获取)
+app.post('/api/xhs/notes/by-ids', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/notes/by-ids`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS get notes from URLs (从URL批量获取)
+app.post('/api/xhs/notes/from-urls', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/notes/from-urls`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS get user from URL (从URL获取用户信息和笔记)
+app.post('/api/xhs/user/from-url', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/user/from-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// XHS get user notes (作者主页)
+app.post('/api/xhs/user/notes', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/user/notes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        
+        // 检查响应状态
+        if (!response.ok) {
+            const errorText = await response.text();
+            try {
+                const errorJson = JSON.parse(errorText);
+                return res.status(response.status).json({ error: errorJson.detail || errorJson.message || 'Request failed' });
+            } catch {
+                return res.status(response.status).json({ error: errorText || 'Request failed' });
+            }
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            res.json(data);
+        } else {
+            const text = await response.text();
+            console.error('[XHS] Non-JSON response:', text.substring(0, 200));
+            res.status(500).json({ error: 'Invalid response format from crawler service' });
+        }
+    } catch (e) {
+        console.error('[XHS] Error fetching user notes:', e);
+        res.status(500).json({ error: e.message || 'Failed to fetch user notes' });
+    }
+});
+
+// XHS get user info
+app.post('/api/xhs/user/info', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/user/info`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        
+        // 检查响应状态
+        if (!response.ok) {
+            const errorText = await response.text();
+            try {
+                const errorJson = JSON.parse(errorText);
+                return res.status(response.status).json({ error: errorJson.detail || errorJson.message || 'Request failed' });
+            } catch {
+                return res.status(response.status).json({ error: errorText || 'Request failed' });
+            }
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            res.json(data);
+        } else {
+            const text = await response.text();
+            console.error('[XHS] Non-JSON response:', text.substring(0, 200));
+            res.status(500).json({ error: 'Invalid response format from crawler service' });
+        }
+    } catch (e) {
+        console.error('[XHS] Error fetching user info:', e);
+        res.status(500).json({ error: e.message || 'Failed to fetch user info' });
+    }
+});
+
+// XHS generate wordcloud
+app.post('/api/xhs/wordcloud', async (req, res) => {
+    try {
+        const response = await fetch(`${CRAWLER_URL}/wordcloud`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(req.body)

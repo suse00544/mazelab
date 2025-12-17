@@ -1,19 +1,23 @@
 {
-  "name": "server",
+  "name": "maze-lab-server",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "start:prod": "NODE_ENV=production node index.js",
+    "init-db": "node init_db.js",
+    "init-db:force": "node init_db.js --force"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Maze Lab Backend Server",
   "dependencies": {
+    "better-sqlite3": "^12.5.0",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "node-fetch": "^2.7.0",
-    "sqlite3": "^5.1.7",
     "uuid": "^13.0.0"
   }
 }

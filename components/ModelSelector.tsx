@@ -17,6 +17,17 @@ interface Props {
 export const ModelSelector: React.FC<Props> = ({ selectedModel, onSelect }) => {
     const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
     const [isOpen, setIsOpen] = useState(false);
+    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+    const [apiKey, setApiKey] = useState('');
+    const [tempApiKey, setTempApiKey] = useState('');
+
+    // 加载缓存的 API key
+    useEffect(() => {
+        const cachedKey = localStorage.getItem('GEMINI_API_KEY');
+        if (cachedKey) {
+            setApiKey(cachedKey);
+        }
+    }, []);
 
     useEffect(() => {
         let mounted = true;
@@ -30,6 +41,24 @@ export const ModelSelector: React.FC<Props> = ({ selectedModel, onSelect }) => {
         check();
         return () => { mounted = false; };
     }, [selectedModel]);
+
+    const handleSaveApiKey = () => {
+        localStorage.setItem('GEMINI_API_KEY', tempApiKey);
+        setApiKey(tempApiKey);
+        setShowApiKeyModal(false);
+        setTempApiKey('');
+        // 重新检查健康状态
+        setHealthStatus('checking');
+        checkModelHealth(selectedModel).then(isOk => {
+            setHealthStatus(isOk ? 'ok' : 'error');
+        });
+    };
+
+    const handleOpenApiKeyModal = () => {
+        setTempApiKey(apiKey);
+        setShowApiKeyModal(true);
+        setIsOpen(false);
+    };
 
     return (
         <div className="relative z-50">
@@ -61,8 +90,70 @@ export const ModelSelector: React.FC<Props> = ({ selectedModel, onSelect }) => {
                                 {selectedModel === m.id && <span className="text-emerald-400">✓</span>}
                             </button>
                         ))}
+                        <div className="border-t border-slate-700 mt-1 pt-1">
+                            <button
+                                onClick={handleOpenApiKeyModal}
+                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-700 text-slate-400 flex items-center gap-2"
+                            >
+                                <span>🔑</span>
+                                <span>配置 API Key</span>
+                                {apiKey && <span className="text-green-400 text-[10px]">✓</span>}
+                            </button>
+                        </div>
                     </div>
                 </>
+            )}
+
+            {/* API Key 配置弹窗 */}
+            {showApiKeyModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+                    <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-6">
+                        <h3 className="text-lg font-bold text-slate-900 mb-4">配置 Gemini API Key</h3>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                                API Key
+                            </label>
+                            <input
+                                type="password"
+                                value={tempApiKey}
+                                onChange={(e) => setTempApiKey(e.target.value)}
+                                placeholder="输入你的 Gemini API Key"
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <p className="mt-2 text-xs text-slate-500">
+                                API Key 将保存在浏览器本地存储中。获取 API Key:
+                                <a
+                                    href="https://aistudio.google.com/app/apikey"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline ml-1"
+                                >
+                                    Google AI Studio
+                                </a>
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => {
+                                    setShowApiKeyModal(false);
+                                    setTempApiKey('');
+                                }}
+                                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={handleSaveApiKey}
+                                disabled={!tempApiKey.trim()}
+                                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                保存
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

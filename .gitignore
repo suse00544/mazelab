@@ -22,3 +22,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Database files
+server/data/*.sqlite
+server/data/*.sqlite-wal
+server/data/*.sqlite-shm
+
+# Uploaded/cached images
+server/public/uploads/*
+!server/public/uploads/.gitkeep
+
+# Python cache
+__pycache__/
+*.pyc
+crawler/xhs/__pycache__/
+
+# Cache directories
+cache/
