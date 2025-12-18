@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from typing import Optional
+from typing import Optional, List
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -45,7 +45,7 @@ class CommentsRequest(BaseModel):
     get_sub_comments: bool = True  # 是否获取二级评论
 
 class NoteIdsRequest(BaseModel):
-    note_ids: list[str]  # 笔记ID列表
+    note_ids: List[str]  # 笔记ID列表
 
 class UserNotesRequest(BaseModel):
     user_id: str
@@ -56,7 +56,7 @@ class UserInfoRequest(BaseModel):
     user_id: str
 
 class WordCloudRequest(BaseModel):
-    comments: list[str]  # 评论文本列表
+    comments: List[str]  # 评论文本列表
 
 class CookieRequest(BaseModel):
     cookies: str
