@@ -1272,9 +1272,9 @@ app.post('/api/xhs/wordcloud', async (req, res) => {
     }
 });
 
-// Catch-all route for SPA in production
+// Catch-all route for SPA in production (Express 5.x syntax)
 if (process.env.NODE_ENV === 'production') {
-    app.get('*', (req, res) => {
+    app.get('/{*path}', (req, res) => {
         res.sendFile(path.join(__dirname, '../dist/index.html'));
     });
 }
