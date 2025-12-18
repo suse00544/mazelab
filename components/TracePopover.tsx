@@ -175,61 +175,111 @@ export const TracePopover: React.FC<Props> = ({ processState, onClose }) => {
                  )}
                  {activeTab === 'interactions' && (
                       <div className="leading-relaxed p-4 space-y-2">
-                          {!processState.currentDebugInfo?.rawInteractions || processState.currentDebugInfo.rawInteractions.length === 0 ? (
-                              <div className="text-slate-500 italic text-center py-8">
-                                  暂无交互记录...
-                              </div>
-                          ) : (
-                              <>
-                                  <div className="text-slate-400 mb-3 text-[10px]">
-                                      共 {processState.currentDebugInfo.rawInteractions.length} 条交互记录
-                                  </div>
-                                  {processState.currentDebugInfo.rawInteractions.map((interaction: any, index: number) => {
-                                      const isExpanded = expandedInteractionIndex === index;
-                                      const action = interaction.clicked ? 'CLICKED' : 'SKIPPED';
-                                      const actionColor = interaction.clicked ? 'text-green-400' : 'text-slate-500';
+                          {(() => {
+                              const interactions = processState.currentDebugInfo?.rawInteractions || [];
 
-                                      return (
-                                          <div key={index} className="border border-slate-700 rounded-lg bg-slate-800/30 overflow-hidden">
-                                              {/* Summary Line (Clickable) */}
-                                              <div
-                                                  onClick={() => setExpandedInteractionIndex(isExpanded ? null : index)}
-                                                  className="p-2 cursor-pointer hover:bg-slate-700/50 transition-colors flex items-center justify-between"
-                                              >
-                                                  <div className="flex-1 flex items-center gap-2 text-[10px]">
-                                                      <span className="text-slate-500">#{index + 1}</span>
-                                                      <span className={`font-bold ${actionColor}`}>{action}</span>
-                                                      <span className="text-slate-300 truncate max-w-[200px]">
-                                                          {interaction.articleContext?.title || 'Unknown'}
-                                                      </span>
-                                                      {interaction.clicked && (
-                                                          <>
-                                                              <span className="text-slate-500">|</span>
-                                                              <span className="text-cyan-400">{interaction.dwellTime}s</span>
-                                                              <span className="text-purple-400">{Math.round(interaction.scrollDepth * 100)}%</span>
-                                                          </>
-                                                      )}
-                                                      {interaction.liked && <span className="text-pink-400">♥</span>}
-                                                      {interaction.comment && <span className="text-yellow-400">💬</span>}
-                                                  </div>
-                                                  <span className="text-slate-500 text-[10px]">
-                                                      {isExpanded ? '▼' : '▶'}
+                              if (interactions.length === 0) {
+                                  return (
+                                      <div className="text-slate-500 italic text-center py-8">
+                                          暂无交互记录（模型将收到空的交互历史）
+                                      </div>
+                                  );
+                              }
+
+                              // 按 sessionId 分组，保持原有顺序
+                              const sessionGroups = new Map<string, any[]>();
+                              interactions.forEach((i: any) => {
+                                  const sid = i.sessionId || 'unknown';
+                                  if (!sessionGroups.has(sid)) {
+                                      sessionGroups.set(sid, []);
+                                  }
+                                  sessionGroups.get(sid)!.push(i);
+                              });
+
+                              // 统计
+                              const clickedCount = interactions.filter((i: any) => i.clicked).length;
+                              const skippedCount = interactions.filter((i: any) => !i.clicked).length;
+
+                              return (
+                                  <>
+                                      <div className="text-slate-400 mb-3 text-[10px] border-b border-slate-700 pb-2">
+                                          <div className="flex justify-between mb-1">
+                                              <span>📊 传给模型的交互数据（最近 {Math.min(30, interactions.length)} 条）</span>
+                                          </div>
+                                          <div className="flex gap-4 text-[9px]">
+                                              <span className="text-green-400">CLICKED: {clickedCount}</span>
+                                              <span className="text-slate-500">SKIPPED: {skippedCount}</span>
+                                              <span>共 {sessionGroups.size} 个 Session</span>
+                                          </div>
+                                      </div>
+
+                                      {Array.from(sessionGroups.entries()).map(([sessionId, sessionInteractions], groupIndex) => (
+                                          <div key={sessionId} className="border border-slate-700 rounded-lg overflow-hidden mb-3">
+                                              {/* Session Header */}
+                                              <div className="bg-slate-800/80 px-3 py-1.5 text-[10px] flex justify-between items-center border-b border-slate-700">
+                                                  <span className="text-cyan-400 font-bold">
+                                                      Session {groupIndex + 1}
+                                                  </span>
+                                                  <span className="text-slate-500 text-[9px]">
+                                                      {sessionId.slice(0, 20)}...
                                                   </span>
                                               </div>
 
-                                              {/* Expanded JSON Details */}
-                                              {isExpanded && (
-                                                  <div className="border-t border-slate-700 p-2 bg-black/20">
-                                                      <pre className="text-[9px] text-slate-300 whitespace-pre-wrap overflow-x-auto">
-                                                          {JSON.stringify(interaction, null, 2)}
-                                                      </pre>
-                                                  </div>
-                                              )}
+                                              {/* Interactions in Session (模型接收格式) */}
+                                              <div className="divide-y divide-slate-800">
+                                                  {sessionInteractions.map((interaction: any, index: number) => {
+                                                      const action = interaction.clicked ? 'CLICKED_AND_VIEWED' : 'SKIPPED_IN_FEED';
+                                                      const actionColor = interaction.clicked ? 'text-green-400' : 'text-slate-500';
+
+                                                      return (
+                                                          <div
+                                                              key={interaction.id || index}
+                                                              className="p-2 text-[10px] hover:bg-slate-800/50"
+                                                          >
+                                                              {/* 模型接收的格式展示 */}
+                                                              <div className="flex items-start gap-2">
+                                                                  <span className="text-slate-600 w-5 shrink-0">#{index + 1}</span>
+                                                                  <div className="flex-1 min-w-0">
+                                                                      {/* article 部分 */}
+                                                                      <div className="text-slate-300 truncate mb-1">
+                                                                          {interaction.articleContext?.title || 'Unknown'}
+                                                                      </div>
+                                                                      {/* behavior 部分 */}
+                                                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px]">
+                                                                          <span className={`font-bold ${actionColor}`}>{action}</span>
+                                                                          {interaction.clicked && (
+                                                                              <>
+                                                                                  <span className="text-cyan-400">
+                                                                                      ⏱ {interaction.dwellTime}s
+                                                                                  </span>
+                                                                                  <span className="text-purple-400">
+                                                                                      📜 {Math.round(interaction.scrollDepth * 100)}%
+                                                                                  </span>
+                                                                              </>
+                                                                          )}
+                                                                          {interaction.liked && <span className="text-pink-400">♥ liked</span>}
+                                                                          {interaction.favorited && <span className="text-yellow-400">⭐ favorited</span>}
+                                                                          {interaction.comment && (
+                                                                              <span className="text-orange-400">💬 "{interaction.comment.slice(0, 20)}..."</span>
+                                                                          )}
+                                                                      </div>
+                                                                      {/* tags */}
+                                                                      {interaction.articleContext?.tags?.length > 0 && (
+                                                                          <div className="text-[9px] text-slate-500 mt-1 truncate">
+                                                                              🏷 {interaction.articleContext.tags.slice(0, 5).join(', ')}
+                                                                          </div>
+                                                                      )}
+                                                                  </div>
+                                                              </div>
+                                                          </div>
+                                                      );
+                                                  })}
+                                              </div>
                                           </div>
-                                      );
-                                  })}
-                              </>
-                          )}
+                                      ))}
+                                  </>
+                              );
+                          })()}
                       </div>
                  )}
              </div>

@@ -337,6 +337,17 @@ export interface RecommendationStrategy {
 export interface DebugInfo {
   logs: string[];
   rawInteractions: any[];
+  // 推荐 session 历史（用于展示所有被推荐的内容）
+  sessions?: Array<{
+    sessionId: string;
+    roundIndex: number;
+    timestamp: number;
+    articles: Array<{
+      id: string;
+      title: string;
+      tags: string[];
+    }>;
+  }>;
   // 新的统一推荐流程调试信息
   unified_pipeline?: {
     stage1_input?: any;

@@ -1049,17 +1049,31 @@ export const runUnifiedRecommendationPipeline = async (
 
   // 初始化 unified_pipeline 追踪对象
   const unifiedPipelineDebug: any = {};
+
+  // 构建 sessions 数据用于展示
+  const sessionsForDisplay = (sessions || []).map(s => ({
+    sessionId: s.sessionId,
+    roundIndex: s.roundIndex,
+    timestamp: s.timestamp,
+    articles: s.articles.map(a => ({
+      id: a.id,
+      title: a.title,
+      tags: a.tag_list || []
+    }))
+  }));
+
   const captureUpdate = (data: any) => {
     if (data.unified_pipeline) {
       Object.assign(unifiedPipelineDebug, data.unified_pipeline);
     }
     onUpdate({
       rawInteractions: sortedInteractions,
+      sessions: sessionsForDisplay,
       unified_pipeline: unifiedPipelineDebug
     });
   };
 
-  onUpdate({ rawInteractions: sortedInteractions });
+  onUpdate({ rawInteractions: sortedInteractions, sessions: sessionsForDisplay });
 
   try {
     // ========== 获取内容库 ==========
@@ -1240,6 +1254,7 @@ export const runUnifiedRecommendationPipeline = async (
       debug: {
         logs: logBuffer,
         rawInteractions: sortedInteractions,
+        sessions: sessionsForDisplay,
         unified_pipeline: unifiedPipelineDebug
       }
     };
