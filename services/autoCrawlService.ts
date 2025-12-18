@@ -2,8 +2,6 @@ import { Article, UserProfile, ContentMedia, TraceRun, TraceStep } from '../type
 import { searchXHSNotes, getXHSNoteDetail, XHSNote, XHSNoteDetail } from './xhsService';
 import { db } from './db';
 
-const API_KEY = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '';
-
 // ==================== 关键词生成 Prompt 拆分 ====================
 
 // 固定前言：冷启动关键词生成

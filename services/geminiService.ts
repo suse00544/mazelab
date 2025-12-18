@@ -28,8 +28,11 @@ import {
 } from "./defaultPrompts";
 
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key missing");
+  // 从 localStorage 获取用户输入的 API Key（安全：不会暴露在代码中）
+  const apiKey = typeof window !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
+  if (!apiKey) {
+    throw new Error("请先在设置中配置 Gemini API Key。点击右上角的设置按钮输入你的 API Key。");
+  }
   return new GoogleGenAI({ apiKey });
 };
 

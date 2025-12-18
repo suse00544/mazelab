@@ -81,7 +81,8 @@ externalPort = 8000
 [userenv]
 
 [userenv.shared]
-JINA_API_KEY = "jina_243aefcda34c481199f025626fdc7c27uqio96mxUChsnt741dAxHSfQ7pSy"
+# JINA_API_KEY should be set in Replit Secrets, not here
+# JINA_API_KEY = "your_jina_api_key_here"
 
 [deployment]
 deploymentTarget = "vm"

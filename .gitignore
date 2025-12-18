@@ -1,3 +1,11 @@
+# Environment files (IMPORTANT: never commit real API keys)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+!.env.example
+
 # Logs
 logs
 *.log

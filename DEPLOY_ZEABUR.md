@@ -19,9 +19,11 @@ Zeabur 会自动识别项目，你会看到一个服务被创建。
 - 点击服务 → Settings → Environment Variables
 - 添加以下变量：
   ```
-  GEMINI_API_KEY=AIzaSyBHsJTPzvSShHJcI-f6OgZkvmjNN2bvtpM
+  GEMINI_API_KEY=your_gemini_api_key_here
   NODE_ENV=production
   ```
+
+> ⚠️ **安全提示**：请使用你自己的 Gemini API Key，不要将真实的 API Key 提交到代码仓库中。
 
 ### 4. 部署
 - Zeabur 会自动开始构建和部署
