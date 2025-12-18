@@ -1,0 +1,5 @@
+{
+  "build_command": "npm run build",
+  "start_command": "cd server && NODE_ENV=production node index.js",
+  "install_command": "npm install && cd server && npm install"
+}

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "cd server && NODE_ENV=production node index.js"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",

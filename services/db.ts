@@ -2,7 +2,7 @@ import { Article, User, Interaction, GeneratedContentBatch, Experiment, Candidat
 import { DEFAULT_STRATEGY_TASK, DEFAULT_CONTENT_TASK } from './geminiService';
 import { DEFAULT_KEYWORD_COLD_START_TASK, DEFAULT_KEYWORD_INTERACTION_TASK } from './autoCrawlService';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 async function api<T>(endpoint: string, options?: RequestInit): Promise<T> {
     // Add cache-busting for GET requests to prevent stale data
